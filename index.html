@@ -1,0 +1,969 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>아이돌 보정실 — Idol Retouch Studio</title>
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="아이돌 보정실">
+<meta name="theme-color" content="#121016">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable.min.css">
+<style>
+  :root{
+    --bg:#121016;
+    --panel:#1c1922;
+    --panel2:#242030;
+    --line:#332e40;
+    --ink:#f4f1f8;
+    --sub:#9a92ab;
+    --rose:#ff8fb8;
+    --rose-deep:#f25d97;
+    --gold:#ffd98a;
+    --lav:#b9a6ff;
+    --radius:18px;
+    font-size:16px;
+  }
+  *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{height:100%}
+  body{
+    font-family:'Pretendard Variable',Pretendard,-apple-system,'Apple SD Gothic Neo','Noto Sans KR',sans-serif;
+    background:var(--bg);
+    color:var(--ink);
+    overscroll-behavior:none;
+  }
+  .app{max-width:520px;margin:0 auto;min-height:100dvh;display:flex;flex-direction:column;padding:env(safe-area-inset-top) 16px calc(96px + env(safe-area-inset-bottom))}
+
+  /* ── header ───────────────────── */
+  header{padding:20px 4px 14px;display:flex;align-items:baseline;justify-content:space-between}
+  .brand{display:flex;flex-direction:column;gap:3px}
+  .eyebrow{font-size:.65rem;letter-spacing:.32em;color:var(--rose);font-weight:700;text-transform:uppercase}
+  h1{font-size:1.45rem;font-weight:800;letter-spacing:-.02em}
+  h1 .light{background:linear-gradient(90deg,var(--rose),var(--gold) 60%,var(--lav));-webkit-background-clip:text;background-clip:text;color:transparent}
+  .reset-btn{background:none;border:1px solid var(--line);color:var(--sub);font-size:.75rem;padding:7px 13px;border-radius:99px;cursor:pointer;font-family:inherit}
+  .reset-btn:active{background:var(--panel2)}
+
+  /* ── stage ────────────────────── */
+  .stage{
+    position:relative;border-radius:var(--radius);overflow:hidden;background:var(--panel);
+    border:1px solid var(--line);
+    aspect-ratio:4/5;
+    display:flex;align-items:center;justify-content:center;
+    touch-action:none;
+  }
+  .stage::before{
+    content:"";position:absolute;inset:-1px;border-radius:var(--radius);pointer-events:none;z-index:6;
+    background:linear-gradient(135deg,rgba(255,143,184,.35),transparent 30%,transparent 70%,rgba(185,166,255,.3));
+    -webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);-webkit-mask-composite:xor;mask-composite:exclude;padding:1px;
+  }
+  canvas{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;background:#000}
+  #origCanvas{z-index:2;opacity:0;transition:opacity .12s}
+  #origCanvas.show{opacity:1}
+  #overlayCanvas{z-index:3;background:transparent;pointer-events:none}
+  .compare-tag{
+    position:absolute;top:12px;left:12px;z-index:5;font-size:.68rem;font-weight:700;letter-spacing:.08em;
+    background:rgba(0,0,0,.55);backdrop-filter:blur(6px);color:var(--gold);
+    padding:5px 11px;border-radius:99px;opacity:0;transition:opacity .12s;pointer-events:none;
+  }
+  .compare-tag.show{opacity:1}
+  .hold-hint{
+    position:absolute;bottom:12px;right:12px;z-index:5;font-size:.66rem;color:rgba(255,255,255,.75);
+    background:rgba(0,0,0,.45);backdrop-filter:blur(6px);padding:5px 11px;border-radius:99px;pointer-events:none;
+  }
+  .busy{
+    position:absolute;inset:0;z-index:7;display:none;flex-direction:column;gap:12px;align-items:center;justify-content:center;
+    background:rgba(18,16,22,.45);backdrop-filter:blur(3px);
+  }
+  .busy.show{display:flex}
+  .busy span{font-size:.75rem;color:var(--ink);font-weight:600;background:rgba(0,0,0,.5);padding:6px 14px;border-radius:99px}
+  .spinner{width:34px;height:34px;border-radius:50%;border:3px solid rgba(255,143,184,.25);border-top-color:var(--rose);animation:spin .8s linear infinite}
+  @keyframes spin{to{transform:rotate(360deg)}}
+
+  /* ── empty / upload ───────────── */
+  .empty{
+    position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;
+    cursor:pointer;z-index:8;background:
+      radial-gradient(120% 90% at 20% 0%,rgba(255,143,184,.10),transparent 55%),
+      radial-gradient(120% 90% at 90% 100%,rgba(185,166,255,.10),transparent 55%),
+      var(--panel);
+  }
+  .empty.hidden{display:none}
+  .ring{
+    width:84px;height:84px;border-radius:50%;display:flex;align-items:center;justify-content:center;
+    background:conic-gradient(var(--rose),var(--gold),var(--lav),var(--rose));
+    animation:hue 6s linear infinite;
+  }
+  @keyframes hue{to{filter:hue-rotate(360deg)}}
+  .ring-inner{width:74px;height:74px;border-radius:50%;background:var(--panel);display:flex;align-items:center;justify-content:center;font-size:1.9rem}
+  .empty b{font-size:1.05rem;font-weight:700}
+  .empty span{font-size:.78rem;color:var(--sub)}
+
+  /* ── tabs ─────────────────────── */
+  .tabs{display:flex;gap:8px;margin-top:18px}
+  .tab{
+    flex:1;border:1px solid var(--line);background:var(--panel);color:var(--sub);
+    border-radius:14px;padding:12px 0;font-family:inherit;font-size:.88rem;font-weight:700;cursor:pointer;
+  }
+  .tab.on{background:var(--panel2);border-color:var(--rose);color:var(--rose)}
+
+  /* ── sections ─────────────────── */
+  .section-label{font-size:.66rem;letter-spacing:.26em;color:var(--sub);font-weight:700;margin:20px 4px 10px;text-transform:uppercase}
+  .presets{display:flex;gap:9px;overflow-x:auto;padding:2px 2px 8px;scrollbar-width:none}
+  .presets::-webkit-scrollbar{display:none}
+  .chip{
+    flex:0 0 auto;border:1px solid var(--line);background:var(--panel);color:var(--ink);
+    border-radius:14px;padding:10px 14px;cursor:pointer;font-family:inherit;text-align:left;min-width:88px;
+    transition:border-color .15s, background .15s;
+  }
+  .chip .gel{display:block;width:100%;height:5px;border-radius:99px;margin-bottom:8px}
+  .chip b{display:block;font-size:.83rem;font-weight:700;letter-spacing:-.01em}
+  .chip span{display:block;font-size:.63rem;color:var(--sub);margin-top:2px}
+  .chip.on{border-color:var(--rose);background:var(--panel2)}
+  .chip.on b{color:var(--rose)}
+
+  .sliders{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:16px 16px 8px}
+  .srow{margin-bottom:14px}
+  .srow .top{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:7px}
+  .srow label{font-size:.82rem;font-weight:600}
+  .srow .val{font-size:.74rem;color:var(--rose);font-variant-numeric:tabular-nums;font-weight:700}
+  input[type=range]{-webkit-appearance:none;appearance:none;width:100%;height:26px;background:transparent;cursor:pointer}
+  input[type=range]::-webkit-slider-runnable-track{height:4px;border-radius:99px;background:linear-gradient(90deg,var(--rose-deep),var(--rose) var(--fill,50%),#39334a var(--fill,50%))}
+  input[type=range]::-webkit-slider-thumb{
+    -webkit-appearance:none;width:20px;height:20px;border-radius:50%;background:#fff;margin-top:-8px;
+    box-shadow:0 1px 6px rgba(0,0,0,.5),0 0 0 3px rgba(255,143,184,.25);
+  }
+  input[type=range]::-moz-range-track{height:4px;border-radius:99px;background:#39334a}
+  input[type=range]::-moz-range-progress{height:4px;border-radius:99px;background:var(--rose)}
+  input[type=range]::-moz-range-thumb{width:20px;height:20px;border-radius:50%;background:#fff;border:none;box-shadow:0 1px 6px rgba(0,0,0,.5)}
+
+  /* ── contour panel ────────────── */
+  .seg{display:flex;background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:4px;gap:4px}
+  .seg button{
+    flex:1;border:none;background:transparent;color:var(--sub);font-family:inherit;font-size:.84rem;font-weight:700;
+    padding:10px 0;border-radius:11px;cursor:pointer;
+  }
+  .seg button.on{background:var(--panel2);color:var(--rose);box-shadow:inset 0 0 0 1px var(--rose)}
+  .panel{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:16px;margin-top:12px}
+  .face-status{display:flex;align-items:center;gap:8px;font-size:.75rem;color:var(--sub);margin-bottom:12px}
+  .dot{width:8px;height:8px;border-radius:50%;background:#555}
+  .dot.ok{background:#5ee8a4;box-shadow:0 0 8px rgba(94,232,164,.6)}
+  .dot.fail{background:#ff6b6b}
+  .brushes{display:flex;gap:8px;margin-bottom:14px}
+  .brush{
+    flex:1;border:1px solid var(--line);background:var(--panel2);color:var(--ink);border-radius:12px;
+    padding:11px 0;font-family:inherit;font-size:.8rem;font-weight:700;cursor:pointer;
+  }
+  .brush small{display:block;font-weight:500;font-size:.62rem;color:var(--sub);margin-top:2px}
+  .brush.on{border-color:var(--gold);color:var(--gold)}
+  .row-btns{display:flex;gap:8px;margin-top:4px}
+  .mini-btn{
+    flex:1;border:1px solid var(--line);background:transparent;color:var(--sub);border-radius:11px;
+    padding:10px 0;font-family:inherit;font-size:.78rem;font-weight:600;cursor:pointer;
+  }
+  .mini-btn:active{background:var(--panel2)}
+  .hint{font-size:.72rem;color:var(--sub);line-height:1.55;margin-top:10px}
+  .hint b{color:var(--gold);font-weight:700}
+  .hidden{display:none!important}
+
+  /* ── bottom bar ───────────────── */
+  .bar{
+    position:fixed;bottom:0;left:0;right:0;z-index:20;
+    background:linear-gradient(transparent,rgba(18,16,22,.92) 30%);
+    padding:18px 16px calc(14px + env(safe-area-inset-bottom));
+  }
+  .bar-inner{max-width:520px;margin:0 auto;display:flex;gap:10px}
+  .btn{flex:1;border:none;border-radius:16px;padding:15px 0;font-size:.95rem;font-weight:800;font-family:inherit;cursor:pointer;letter-spacing:-.01em}
+  .btn:disabled{opacity:.35}
+  .btn-ghost{background:var(--panel2);color:var(--ink);border:1px solid var(--line);flex:0 0 auto;padding:15px 18px}
+  .btn-save{
+    background:linear-gradient(110deg,var(--rose-deep),var(--rose) 55%,var(--gold));color:#2a0d1b;
+    box-shadow:0 6px 24px rgba(242,93,151,.35);
+  }
+  .btn-save:active{transform:translateY(1px)}
+  .toast{
+    position:fixed;left:50%;bottom:110px;transform:translateX(-50%) translateY(8px);z-index:30;
+    background:rgba(0,0,0,.8);backdrop-filter:blur(8px);color:#fff;font-size:.8rem;font-weight:600;
+    padding:10px 18px;border-radius:99px;opacity:0;pointer-events:none;transition:.25s;white-space:nowrap;max-width:90vw;
+  }
+  .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+  @media (prefers-reduced-motion: reduce){
+    .ring{animation:none}
+    *{transition:none!important}
+  }
+</style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <div class="brand">
+      <div class="eyebrow">K-pop Retouch Studio</div>
+      <h1>아이돌 <span class="light">보정실</span></h1>
+    </div>
+    <button class="reset-btn" id="resetBtn">초기화</button>
+  </header>
+
+  <div class="stage" id="stage">
+    <canvas id="mainCanvas"></canvas>
+    <canvas id="origCanvas"></canvas>
+    <canvas id="overlayCanvas"></canvas>
+    <div class="compare-tag" id="compareTag">원본 BEFORE</div>
+    <div class="hold-hint" id="holdHint" style="display:none">꾹 눌러서 원본 비교</div>
+    <div class="busy" id="busy"><div class="spinner"></div><span id="busyMsg">처리 중…</span></div>
+    <div class="empty" id="empty">
+      <div class="ring"><div class="ring-inner">📸</div></div>
+      <b>셀카를 올려주세요</b>
+      <span>탭해서 사진 선택 · 갤러리 또는 카메라</span>
+    </div>
+  </div>
+  <input type="file" id="fileInput" accept="image/*" hidden>
+
+  <div class="tabs">
+    <button class="tab on" id="tabColor">✨ 컬러 · 피부</button>
+    <button class="tab" id="tabContour">📐 윤곽 성형</button>
+  </div>
+
+  <!-- ═══ COLOR TAB ═══ -->
+  <div id="colorPane">
+    <div class="section-label">조명 프리셋 · Presets</div>
+    <div class="presets" id="presets"></div>
+    <div class="section-label">디테일 보정 · Fine Tune</div>
+    <div class="sliders" id="sliders"></div>
+  </div>
+
+  <!-- ═══ CONTOUR TAB ═══ -->
+  <div id="contourPane" class="hidden">
+    <div class="section-label" style="margin-top:18px">모드 선택</div>
+    <div class="seg">
+      <button id="modeAuto" class="on">🤖 자동 (AI 얼굴 인식)</button>
+      <button id="modeManual">✋ 수동 (직접 보정)</button>
+    </div>
+
+    <!-- auto -->
+    <div class="panel" id="autoPanel">
+      <div class="face-status"><span class="dot" id="faceDot"></span><span id="faceStatusText">프리셋을 선택하면 얼굴을 인식해요</span></div>
+      <div class="presets" id="autoPresets" style="padding-bottom:2px"></div>
+      <div class="srow" style="margin-top:14px;margin-bottom:4px">
+        <div class="top"><label>자동 보정 강도</label><span class="val" id="intensityVal">100</span></div>
+        <input type="range" id="intensitySlider" min="0" max="150" value="100" step="5">
+      </div>
+    </div>
+
+    <!-- manual -->
+    <div class="panel hidden" id="manualPanel">
+      <div class="brushes">
+        <button class="brush on" data-brush="push">↘ 밀기<small>턱선 드래그</small></button>
+        <button class="brush" data-brush="shrink">◉ 축소<small>탭 한 번</small></button>
+        <button class="brush" data-brush="grow">⊕ 확대<small>눈 키우기</small></button>
+      </div>
+      <div class="srow">
+        <div class="top"><label>브러시 크기</label><span class="val" id="brushSizeVal">90</span></div>
+        <input type="range" id="brushSize" min="25" max="220" value="90" step="5">
+      </div>
+      <div class="srow" style="margin-bottom:6px">
+        <div class="top"><label>강도</label><span class="val" id="brushStrVal">50</span></div>
+        <input type="range" id="brushStr" min="10" max="100" value="50" step="5">
+      </div>
+      <div class="row-btns">
+        <button class="mini-btn" id="undoBtn">↩ 되돌리기</button>
+        <button class="mini-btn" id="clearManualBtn">수동 전체 취소</button>
+      </div>
+      <div class="hint"><b>밀기:</b> 턱 바깥쪽에서 안쪽으로 드래그하면 갸름해져요 · <b>축소/확대:</b> 원하는 곳을 탭하면 그 부분이 줄거나 커져요</div>
+    </div>
+  </div>
+</div>
+
+<div class="bar">
+  <div class="bar-inner">
+    <button class="btn btn-ghost" id="changeBtn" disabled>사진 변경</button>
+    <button class="btn btn-save" id="saveBtn" disabled>고화질로 저장하기 ✦</button>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+(function(){
+"use strict";
+
+/* ═══════════ state ═══════════ */
+const DEFAULTS = { smooth:0, glow:0, bright:0, contrast:0, warmth:0, pink:0, sat:0, sharp:0 };
+let params = {...DEFAULTS};
+let fullImg = null;
+let previewData = null;       // original preview ImageData (never mutated)
+let warpCache = null;         // previewData after warps
+let previewBlur = null;       // blur of warpCache
+let activePreset = 'none';
+let renderQueued = false;
+
+let manualOps = [];           // user liquify ops (normalized)
+let autoOps = [];             // generated from landmarks
+let autoPresetId = 'none';
+let autoIntensity = 100;
+let landmarks = null;         // cached per photo
+let faceMeshInst = null;
+let detecting = false;
+
+let curTab = 'color';         // 'color' | 'contour'
+let contourMode = 'auto';     // 'auto' | 'manual'
+let brushType = 'push';
+let brushSize = 90, brushStr = 50;
+
+const PREVIEW_MAX = 1000;
+const EXPORT_MAX = 2200;
+
+/* ═══════════ presets ═══════════ */
+const PRESETS = [
+  { id:'none',  name:'원본',     sub:'No filter',  gel:'linear-gradient(90deg,#555,#888)', p:{...DEFAULTS} },
+  { id:'mulgwang', name:'물광 피부', sub:'Dewy glow', gel:'linear-gradient(90deg,#ffd98a,#ff8fb8)', p:{smooth:55,glow:45,bright:14,contrast:4,warmth:10,pink:12,sat:6,sharp:10} },
+  { id:'dojagi',  name:'도자기',   sub:'Porcelain',  gel:'linear-gradient(90deg,#fdfbff,#cfd8ff)', p:{smooth:78,glow:18,bright:18,contrast:-4,warmth:-8,pink:8,sat:-10,sharp:6} },
+  { id:'cheongsun', name:'청순',   sub:'Soft & pure', gel:'linear-gradient(90deg,#ffc6dd,#ffe8f1)', p:{smooth:50,glow:30,bright:20,contrast:-6,warmth:4,pink:28,sat:-4,sharp:0} },
+  { id:'chic',   name:'시크 무드', sub:'Cold chic',  gel:'linear-gradient(90deg,#8fa8ff,#3d4b78)', p:{smooth:40,glow:10,bright:2,contrast:18,warmth:-22,pink:0,sat:-14,sharp:18} },
+  { id:'mv',     name:'MV 감성',  sub:'Cinematic',  gel:'linear-gradient(90deg,#16e0c0,#ff9a62)', p:{smooth:45,glow:25,bright:6,contrast:14,warmth:14,pink:6,sat:14,sharp:12} },
+  { id:'hwabo',  name:'잡지 화보', sub:'Editorial',  gel:'linear-gradient(90deg,#f5f5f5,#b9a6ff)', p:{smooth:35,glow:8,bright:8,contrast:22,warmth:0,pink:4,sat:8,sharp:32} },
+];
+
+const AUTO_PRESETS = [
+  { id:'none',  name:'끄기',        sub:'Off',            gel:'linear-gradient(90deg,#555,#888)' },
+  { id:'vline', name:'브이라인',     sub:'턱선 슬림',        gel:'linear-gradient(90deg,#ff8fb8,#f25d97)' },
+  { id:'eyes',  name:'눈 또렷',     sub:'눈 확대',          gel:'linear-gradient(90deg,#b9a6ff,#8fa8ff)' },
+  { id:'nose',  name:'코 슬림',     sub:'콧볼 축소',        gel:'linear-gradient(90deg,#ffd98a,#ffb56b)' },
+  { id:'full',  name:'아이돌 풀패키지', sub:'V라인+눈+코',    gel:'linear-gradient(90deg,#ff8fb8,#ffd98a,#b9a6ff)' },
+];
+
+const SLIDER_DEFS = [
+  { key:'smooth',  label:'피부 보정',   min:0,   max:100 },
+  { key:'glow',    label:'물광 글로우', min:0,   max:100 },
+  { key:'bright',  label:'밝기',       min:-50, max:50  },
+  { key:'contrast',label:'대비',       min:-50, max:50  },
+  { key:'warmth',  label:'색온도 (차갑게 ↔ 따뜻하게)', min:-50, max:50 },
+  { key:'pink',    label:'핑크 톤업',   min:0,   max:100 },
+  { key:'sat',     label:'채도',       min:-50, max:50  },
+  { key:'sharp',   label:'선명도',     min:0,   max:100 },
+];
+
+/* ═══════════ dom ═══════════ */
+const $ = id => document.getElementById(id);
+const mainCanvas=$('mainCanvas'), origCanvas=$('origCanvas'), overlayCanvas=$('overlayCanvas'),
+      stage=$('stage'), empty=$('empty'), fileInput=$('fileInput'),
+      presetsEl=$('presets'), autoPresetsEl=$('autoPresets'),
+      slidersEl=$('sliders'), saveBtn=$('saveBtn'), changeBtn=$('changeBtn'),
+      resetBtn=$('resetBtn'), toast=$('toast'), busy=$('busy'), busyMsg=$('busyMsg'),
+      compareTag=$('compareTag'), holdHint=$('holdHint'),
+      colorPane=$('colorPane'), contourPane=$('contourPane'),
+      tabColor=$('tabColor'), tabContour=$('tabContour'),
+      modeAuto=$('modeAuto'), modeManual=$('modeManual'),
+      autoPanel=$('autoPanel'), manualPanel=$('manualPanel'),
+      faceDot=$('faceDot'), faceStatusText=$('faceStatusText'),
+      intensitySlider=$('intensitySlider'), intensityVal=$('intensityVal');
+
+/* ═══════════ tabs ═══════════ */
+tabColor.addEventListener('click',()=>setTab('color'));
+tabContour.addEventListener('click',()=>setTab('contour'));
+function setTab(t){
+  curTab=t;
+  tabColor.classList.toggle('on',t==='color');
+  tabContour.classList.toggle('on',t==='contour');
+  colorPane.classList.toggle('hidden',t!=='color');
+  contourPane.classList.toggle('hidden',t!=='contour');
+  updateHint();
+}
+modeAuto.addEventListener('click',()=>setContourMode('auto'));
+modeManual.addEventListener('click',()=>setContourMode('manual'));
+function setContourMode(m){
+  contourMode=m;
+  modeAuto.classList.toggle('on',m==='auto');
+  modeManual.classList.toggle('on',m==='manual');
+  autoPanel.classList.toggle('hidden',m!=='auto');
+  manualPanel.classList.toggle('hidden',m!=='manual');
+  updateHint();
+}
+function manualEditing(){ return curTab==='contour' && contourMode==='manual'; }
+function updateHint(){
+  if(!fullImg){ holdHint.style.display='none'; return; }
+  holdHint.style.display='block';
+  holdHint.textContent = manualEditing() ? '사진 위에서 드래그/탭 하세요' : '꾹 눌러서 원본 비교';
+}
+
+/* ═══════════ color preset chips ═══════════ */
+PRESETS.forEach(pr=>{
+  const b=document.createElement('button');
+  b.className='chip'+(pr.id===activePreset?' on':'');
+  b.dataset.id=pr.id;
+  b.innerHTML=`<span class="gel" style="background:${pr.gel}"></span><b>${pr.name}</b><span>${pr.sub}</span>`;
+  b.addEventListener('click',()=>{
+    activePreset=pr.id;
+    params={...pr.p};
+    syncSliders(); markChips(); scheduleRender();
+  });
+  presetsEl.appendChild(b);
+});
+function markChips(){
+  presetsEl.querySelectorAll('.chip').forEach(c=>c.classList.toggle('on',c.dataset.id===activePreset));
+}
+
+/* ═══════════ auto preset chips ═══════════ */
+AUTO_PRESETS.forEach(pr=>{
+  const b=document.createElement('button');
+  b.className='chip'+(pr.id===autoPresetId?' on':'');
+  b.dataset.id=pr.id;
+  b.innerHTML=`<span class="gel" style="background:${pr.gel}"></span><b>${pr.name}</b><span>${pr.sub}</span>`;
+  b.addEventListener('click',()=>applyAutoPreset(pr.id));
+  autoPresetsEl.appendChild(b);
+});
+function markAutoChips(){
+  autoPresetsEl.querySelectorAll('.chip').forEach(c=>c.classList.toggle('on',c.dataset.id===autoPresetId));
+}
+intensitySlider.addEventListener('input',()=>{
+  autoIntensity=+intensitySlider.value;
+  intensityVal.textContent=autoIntensity;
+  paintRange(intensitySlider);
+  if(autoPresetId!=='none' && landmarks){
+    autoOps=genAutoOps(landmarks,autoPresetId,autoIntensity);
+    invalidateWarp(); scheduleRender();
+  }
+});
+
+async function applyAutoPreset(id){
+  if(!fullImg){ showToast('먼저 사진을 올려주세요'); return; }
+  autoPresetId=id; markAutoChips();
+  if(id==='none'){ autoOps=[]; invalidateWarp(); scheduleRender(); return; }
+  try{
+    if(!landmarks){
+      setFaceStatus('detecting');
+      showBusy('AI가 얼굴을 인식하는 중…');
+      landmarks=await detectFace();
+      hideBusy();
+      setFaceStatus('ok');
+    }
+    autoOps=genAutoOps(landmarks,autoPresetId,autoIntensity);
+    invalidateWarp(); scheduleRender();
+  }catch(err){
+    hideBusy();
+    autoPresetId='none'; autoOps=[]; markAutoChips();
+    setFaceStatus('fail');
+    if(err && err.message==='noface') showToast('얼굴을 찾지 못했어요 — 정면 셀카로 다시 시도해보세요');
+    else showToast('AI 모델을 불러올 수 없어요 — 수동 모드를 사용해주세요');
+  }
+}
+function setFaceStatus(s){
+  faceDot.className='dot'+(s==='ok'?' ok':s==='fail'?' fail':'');
+  faceStatusText.textContent =
+    s==='ok' ? '얼굴 인식 완료 ✓ 프리셋이 적용돼요' :
+    s==='fail' ? '얼굴 인식 실패 — 수동 모드를 써보세요' :
+    s==='detecting' ? '얼굴 인식 중…' :
+    '프리셋을 선택하면 얼굴을 인식해요';
+}
+
+/* ═══════════ face detection (MediaPipe FaceMesh via CDN) ═══════════ */
+function loadScript(src){
+  return new Promise((res,rej)=>{
+    const s=document.createElement('script');
+    s.src=src; s.onload=res; s.onerror=()=>rej(new Error('cdn'));
+    document.head.appendChild(s);
+    setTimeout(()=>rej(new Error('cdn-timeout')),20000);
+  });
+}
+async function detectFace(){
+  if(!window.FaceMesh){
+    await loadScript('https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js');
+  }
+  if(!window.FaceMesh) throw new Error('cdn');
+  if(!faceMeshInst){
+    faceMeshInst=new window.FaceMesh({locateFile:f=>'https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/'+f});
+    faceMeshInst.setOptions({maxNumFaces:1,refineLandmarks:true,minDetectionConfidence:0.5,minTrackingConfidence:0.5});
+  }
+  const c=document.createElement('canvas');
+  c.width=previewData.width; c.height=previewData.height;
+  c.getContext('2d').putImageData(previewData,0,0);
+  return await new Promise((res,rej)=>{
+    let done=false;
+    faceMeshInst.onResults(r=>{
+      if(done) return; done=true;
+      if(r.multiFaceLandmarks && r.multiFaceLandmarks.length) res(r.multiFaceLandmarks[0]);
+      else rej(new Error('noface'));
+    });
+    faceMeshInst.send({image:c}).catch(e=>{ if(!done){done=true;rej(e);} });
+    setTimeout(()=>{ if(!done){done=true;rej(new Error('detect-timeout'));} },25000);
+  });
+}
+
+/* ═══════════ auto op generation (the idol face recipe) ═══════════ */
+function genAutoOps(lm,preset,intensity){
+  const I=intensity/100;
+  if(I<=0) return [];
+  const P=i=>lm[i];
+  const dist=(a,b)=>Math.hypot(a.x-b.x,a.y-b.y);
+  const faceW=dist(P(234),P(454));          // normalized face width
+  const center=P(5);                         // mid-nose anchor
+  const ops=[];
+  const pushToward=(pt,target,mag,r)=>{
+    const dx=target.x-pt.x, dy=target.y-pt.y;
+    const len=Math.hypot(dx,dy)||1;
+    ops.push({type:'push',cx:pt.x,cy:pt.y,r:r,dx:dx/len*mag,dy:dy/len*mag});
+  };
+  const wantJaw  = preset==='vline'||preset==='full';
+  const wantEyes = preset==='eyes' ||preset==='full';
+  const wantNose = preset==='nose' ||preset==='full';
+
+  if(wantJaw){
+    const mag=faceW*0.040*I;
+    // lower jaw → toward mid-nose (creates the V)
+    [172,136,150,397,365,379].forEach(i=>pushToward(P(i),center,mag,faceW*0.42));
+    // cheek edges, gentler
+    [234,454].forEach(i=>pushToward(P(i),center,mag*0.45,faceW*0.38));
+    // chin tip: tiny pull up-in for a tidy point
+    pushToward(P(152),center,mag*0.35,faceW*0.30);
+  }
+  if(wantEyes){
+    const eyeW=dist(P(33),P(133));
+    const rEye=Math.max(eyeW*1.5,faceW*0.16);
+    const s=0.15*I;
+    const rc=lm[468]||avgPt([P(33),P(133),P(159),P(145)]);
+    const lc=lm[473]||avgPt([P(362),P(263),P(386),P(374)]);
+    ops.push({type:'bulge',cx:rc.x,cy:rc.y,r:rEye,s:s});
+    ops.push({type:'bulge',cx:lc.x,cy:lc.y,r:rEye,s:s});
+  }
+  if(wantNose){
+    const tip=P(1);
+    const mag=faceW*0.022*I;
+    [64,294].forEach(i=>{
+      const pt=P(i);
+      const dx=tip.x-pt.x;
+      ops.push({type:'push',cx:pt.x,cy:pt.y,r:faceW*0.16,dx:Math.sign(dx)*mag,dy:0});
+    });
+  }
+  return ops;
+}
+function avgPt(pts){
+  let x=0,y=0; pts.forEach(p=>{x+=p.x;y+=p.y});
+  return {x:x/pts.length,y:y/pts.length};
+}
+
+/* ═══════════ color sliders ═══════════ */
+const sliderInputs={};
+function paintRange(input){
+  const min=+input.min,max=+input.max;
+  const pct=((+input.value-min)/(max-min))*100;
+  input.style.setProperty('--fill',pct+'%');
+}
+SLIDER_DEFS.forEach(def=>{
+  const row=document.createElement('div');
+  row.className='srow';
+  row.innerHTML=`<div class="top"><label>${def.label}</label><span class="val">0</span></div>`;
+  const input=document.createElement('input');
+  input.type='range'; input.min=def.min; input.max=def.max; input.value=params[def.key]; input.step=1;
+  const valEl=row.querySelector('.val');
+  const paint=()=>{
+    paintRange(input);
+    valEl.textContent=input.value>0&&def.min<0?'+'+input.value:input.value;
+  };
+  input.addEventListener('input',()=>{
+    params[def.key]=+input.value;
+    activePreset='custom'; markChips();
+    paint(); scheduleRender();
+  });
+  paint();
+  row.appendChild(input);
+  slidersEl.appendChild(row);
+  sliderInputs[def.key]={input,paint};
+});
+function syncSliders(){
+  SLIDER_DEFS.forEach(def=>{
+    sliderInputs[def.key].input.value=params[def.key];
+    sliderInputs[def.key].paint();
+  });
+}
+paintRange(intensitySlider);
+
+/* ═══════════ manual brush controls ═══════════ */
+document.querySelectorAll('.brush').forEach(b=>{
+  b.addEventListener('click',()=>{
+    brushType=b.dataset.brush;
+    document.querySelectorAll('.brush').forEach(x=>x.classList.toggle('on',x===b));
+  });
+});
+const brushSizeEl=$('brushSize'), brushStrEl=$('brushStr');
+brushSizeEl.addEventListener('input',()=>{ brushSize=+brushSizeEl.value; $('brushSizeVal').textContent=brushSize; paintRange(brushSizeEl); });
+brushStrEl.addEventListener('input',()=>{ brushStr=+brushStrEl.value; $('brushStrVal').textContent=brushStr; paintRange(brushStrEl); });
+paintRange(brushSizeEl); paintRange(brushStrEl);
+
+$('undoBtn').addEventListener('click',()=>{
+  if(!manualOps.length){ showToast('되돌릴 보정이 없어요'); return; }
+  manualOps.pop();
+  invalidateWarp(); scheduleRender();
+});
+$('clearManualBtn').addEventListener('click',()=>{
+  if(!manualOps.length) return;
+  manualOps=[];
+  invalidateWarp(); scheduleRender();
+  showToast('수동 보정을 모두 취소했어요');
+});
+
+/* ═══════════ image loading ═══════════ */
+empty.addEventListener('click',()=>fileInput.click());
+changeBtn.addEventListener('click',()=>fileInput.click());
+fileInput.addEventListener('change',e=>{
+  const f=e.target.files && e.target.files[0];
+  if(!f) return;
+  const url=URL.createObjectURL(f);
+  const img=new Image();
+  img.onload=()=>{
+    URL.revokeObjectURL(url);
+    fullImg=img;
+    landmarks=null; manualOps=[]; autoOps=[]; autoPresetId='none';
+    markAutoChips(); setFaceStatus('idle');
+    setupPreview();
+    empty.classList.add('hidden');
+    saveBtn.disabled=false; changeBtn.disabled=false;
+    updateHint();
+    scheduleRender();
+  };
+  img.onerror=()=>showToast('이미지를 불러올 수 없어요');
+  img.src=url;
+  fileInput.value='';
+});
+
+function fitSize(w,h,max){
+  const s=Math.min(1,max/Math.max(w,h));
+  return [Math.round(w*s),Math.round(h*s)];
+}
+function setupPreview(){
+  const [w,h]=fitSize(fullImg.naturalWidth,fullImg.naturalHeight,PREVIEW_MAX);
+  const c=document.createElement('canvas'); c.width=w; c.height=h;
+  c.getContext('2d').drawImage(fullImg,0,0,w,h);
+  previewData=c.getContext('2d').getImageData(0,0,w,h);
+  invalidateWarp();
+  mainCanvas.width=w; mainCanvas.height=h;
+  origCanvas.width=w; origCanvas.height=h;
+  overlayCanvas.width=w; overlayCanvas.height=h;
+  origCanvas.getContext('2d').putImageData(previewData,0,0);
+}
+function invalidateWarp(){ warpCache=null; previewBlur=null; }
+
+/* ═══════════ warping engine (liquify) ═══════════
+   ops are normalized: cx,cy ∈ image fraction · r = fraction of min dim
+   push: dx,dy = displacement as fraction of width/height
+   bulge: s>0 enlarge, s<0 shrink
+   Ops are applied sequentially (like real liquify strokes).
+*/
+function applyOps(imageData, ops){
+  const w=imageData.width, h=imageData.height;
+  const buf=new Uint8ClampedArray(imageData.data);     // working copy
+  const minD=Math.min(w,h);
+  for(const op of ops){
+    const cx=op.cx*w, cy=op.cy*h, r=op.r*minD;
+    if(r<1.5) continue;
+    const r2=r*r;
+    const x0=Math.max(0,Math.floor(cx-r)), x1=Math.min(w-1,Math.ceil(cx+r));
+    const y0=Math.max(0,Math.floor(cy-r)), y1=Math.min(h-1,Math.ceil(cy+r));
+    if(x1<x0||y1<y0) continue;
+    const bw=x1-x0+1, bh=y1-y0+1;
+    const scratch=new Uint8ClampedArray(bw*bh*4);
+    const pdx=(op.dx||0)*w, pdy=(op.dy||0)*h;
+    for(let y=y0;y<=y1;y++){
+      for(let x=x0;x<=x1;x++){
+        const ddx=x-cx, ddy=y-cy, d2=ddx*ddx+ddy*ddy;
+        const si=((y-y0)*bw+(x-x0))*4;
+        if(d2>=r2){
+          const bi=(y*w+x)*4;
+          scratch[si]=buf[bi]; scratch[si+1]=buf[bi+1]; scratch[si+2]=buf[bi+2]; scratch[si+3]=buf[bi+3];
+          continue;
+        }
+        const d=Math.sqrt(d2);
+        const t=1-d/r;
+        const fall=t*t*(3-2*t);                        // smoothstep falloff
+        let sx,sy;
+        if(op.type==='push'){
+          sx=x-pdx*fall; sy=y-pdy*fall;
+        }else{
+          const k=1-op.s*fall;
+          sx=cx+ddx*k; sy=cy+ddy*k;
+        }
+        bilinear(buf,w,h,sx,sy,scratch,si);
+      }
+    }
+    // write scratch back
+    for(let y=y0;y<=y1;y++){
+      const rowS=((y-y0)*bw)*4, rowB=(y*w+x0)*4;
+      buf.set(scratch.subarray(rowS,rowS+bw*4),rowB);
+    }
+  }
+  return new ImageData(buf,w,h);
+}
+function bilinear(src,w,h,fx,fy,dst,di){
+  fx=fx<0?0:fx>w-1?w-1:fx;
+  fy=fy<0?0:fy>h-1?h-1:fy;
+  const x0=Math.floor(fx), y0=Math.floor(fy);
+  const x1=Math.min(w-1,x0+1), y1=Math.min(h-1,y0+1);
+  const tx=fx-x0, ty=fy-y0;
+  const i00=(y0*w+x0)*4, i10=(y0*w+x1)*4, i01=(y1*w+x0)*4, i11=(y1*w+x1)*4;
+  for(let c=0;c<4;c++){
+    const top=src[i00+c]+(src[i10+c]-src[i00+c])*tx;
+    const bot=src[i01+c]+(src[i11+c]-src[i01+c])*tx;
+    dst[di+c]=top+(bot-top)*ty;
+  }
+}
+function allOps(){ return autoOps.concat(manualOps); }
+
+/* ═══════════ color pipeline ═══════════ */
+function boxBlurRGB(src,w,h,radius){
+  const out=new Float32Array(src.length);
+  const tmp=new Float32Array(src.length);
+  for(let i=0;i<src.length;i++) tmp[i]=src[i];
+  for(let pass=0;pass<2;pass++){
+    blurPass(tmp,out,w,h,radius,true);
+    blurPass(out,tmp,w,h,radius,false);
+  }
+  return tmp;
+}
+function blurPass(src,dst,w,h,r,horiz){
+  const len=horiz?w:h, lines=horiz?h:w;
+  const norm=1/(2*r+1);
+  for(let line=0;line<lines;line++){
+    for(let ch=0;ch<3;ch++){
+      let acc=0;
+      const idx=horiz ? (i)=>((line*w+i)*4+ch) : (i)=>((i*w+line)*4+ch);
+      for(let i=-r;i<=r;i++){
+        const j=Math.min(len-1,Math.max(0,i));
+        acc+=src[idx(j)];
+      }
+      for(let i=0;i<len;i++){
+        dst[idx(i)]=acc*norm;
+        acc+=src[idx(Math.min(len-1,i+r+1))]-src[idx(Math.max(0,i-r))];
+      }
+    }
+  }
+  for(let i=3;i<src.length;i+=4) dst[i]=src[i];
+}
+function skinWeight(r,g,b){
+  if(r<50) return 0.15;
+  let w=1;
+  if(!(r>g&&r>b*0.9)) w*=0.3;
+  const d=r-g;
+  if(d<8) w*=0.4; else if(d>120) w*=0.4;
+  return w;
+}
+function processPixels(orig,blur,w,h,p,outData){
+  const o=orig.data, out=outData.data;
+  const n=o.length;
+  const smoothAmt=p.smooth/100;
+  const glowAmt=p.glow/100*0.55;
+  const bright=p.bright*1.5;
+  const cont=1+p.contrast/100*0.9;
+  const warm=p.warmth*0.6;
+  const pink=p.pink/100;
+  const satF=1+p.sat/100;
+  const sharpAmt=p.sharp/100*1.2;
+  const sigma=34, twoSig2=2*sigma*sigma;
+  for(let i=0;i<n;i+=4){
+    let r=o[i],g=o[i+1],b=o[i+2];
+    const br_=blur[i],bg=blur[i+1],bb=blur[i+2];
+    if(smoothAmt>0){
+      const diff=(Math.abs(r-br_)+Math.abs(g-bg)+Math.abs(b-bb))/3;
+      let wgt=Math.exp(-(diff*diff)/twoSig2);
+      wgt*=(0.35+0.65*skinWeight(r,g,b));
+      const t=smoothAmt*wgt;
+      r+=(br_-r)*t; g+=(bg-g)*t; b+=(bb-b)*t;
+    }
+    if(glowAmt>0){
+      r=255-(255-r)*(255-br_*glowAmt)/255;
+      g=255-(255-g)*(255-bg*glowAmt)/255;
+      b=255-(255-b)*(255-bb*glowAmt)/255;
+    }
+    if(sharpAmt>0){
+      r+=(r-br_)*sharpAmt; g+=(g-bg)*sharpAmt; b+=(b-bb)*sharpAmt;
+    }
+    r=(r-128)*cont+128+bright;
+    g=(g-128)*cont+128+bright;
+    b=(b-128)*cont+128+bright;
+    r+=warm; b-=warm;
+    if(pink>0){
+      const lum=(r*0.299+g*0.587+b*0.114)/255;
+      const mid=4*lum*(1-lum);
+      const k=pink*0.35*mid;
+      r+=(255-r)*k*0.9; g+=(214-g)*k*0.45; b+=(228-b)*k*0.7;
+    }
+    if(satF!==1){
+      const lum=r*0.299+g*0.587+b*0.114;
+      r=lum+(r-lum)*satF; g=lum+(g-lum)*satF; b=lum+(b-lum)*satF;
+    }
+    out[i]=r<0?0:r>255?255:r;
+    out[i+1]=g<0?0:g>255?255:g;
+    out[i+2]=b<0?0:b>255?255:b;
+    out[i+3]=o[i+3];
+  }
+}
+
+/* ═══════════ render ═══════════ */
+function renderPreview(){
+  if(!previewData) return;
+  const w=previewData.width, h=previewData.height;
+  if(!warpCache){
+    const ops=allOps();
+    warpCache = ops.length ? applyOps(previewData,ops) : previewData;
+    previewBlur=null;
+  }
+  if(!previewBlur){
+    const radius=Math.max(2,Math.round(Math.min(w,h)/110));
+    previewBlur=boxBlurRGB(warpCache.data,w,h,radius);
+  }
+  const out=new ImageData(w,h);
+  processPixels(warpCache,previewBlur,w,h,params,out);
+  mainCanvas.getContext('2d').putImageData(out,0,0);
+}
+function scheduleRender(){
+  if(renderQueued) return;
+  renderQueued=true;
+  requestAnimationFrame(()=>{ renderQueued=false; renderPreview(); });
+}
+
+/* ═══════════ stage pointer: compare vs liquify ═══════════ */
+const octx=overlayCanvas.getContext('2d');
+let dragStart=null;
+function stageToCanvas(e){
+  const rect=mainCanvas.getBoundingClientRect();
+  const cw=mainCanvas.width, ch=mainCanvas.height;
+  if(!cw||!ch) return null;
+  const scale=Math.min(rect.width/cw, rect.height/ch);
+  const dispW=cw*scale, dispH=ch*scale;
+  const offX=rect.left+(rect.width-dispW)/2;
+  const offY=rect.top+(rect.height-dispH)/2;
+  return { x:(e.clientX-offX)/scale, y:(e.clientY-offY)/scale, scale };
+}
+function drawBrushOverlay(p,p2){
+  octx.clearRect(0,0,overlayCanvas.width,overlayCanvas.height);
+  if(!p) return;
+  octx.strokeStyle='rgba(255,217,138,.95)';
+  octx.lineWidth=2;
+  octx.setLineDash([6,5]);
+  octx.beginPath();
+  octx.arc(p.x,p.y,brushSize,0,Math.PI*2);
+  octx.stroke();
+  octx.setLineDash([]);
+  if(p2){
+    octx.strokeStyle='rgba(255,143,184,.95)';
+    octx.lineWidth=3;
+    octx.beginPath(); octx.moveTo(p.x,p.y); octx.lineTo(p2.x,p2.y); octx.stroke();
+    octx.fillStyle='rgba(255,143,184,.95)';
+    octx.beginPath(); octx.arc(p2.x,p2.y,5,0,Math.PI*2); octx.fill();
+  }
+}
+stage.addEventListener('pointerdown',e=>{
+  if(!fullImg) return;
+  e.preventDefault();
+  if(manualEditing()){
+    const p=stageToCanvas(e);
+    if(!p) return;
+    dragStart=p;
+    drawBrushOverlay(p);
+    stage.setPointerCapture(e.pointerId);
+  }else{
+    showOrig(true);
+  }
+});
+stage.addEventListener('pointermove',e=>{
+  if(!fullImg||!manualEditing()||!dragStart) return;
+  const p=stageToCanvas(e);
+  if(p) drawBrushOverlay(dragStart,brushType==='push'?p:null);
+});
+stage.addEventListener('pointerup',e=>{
+  showOrig(false);
+  if(!fullImg||!manualEditing()||!dragStart) return;
+  const end=stageToCanvas(e);
+  const start=dragStart; dragStart=null;
+  octx.clearRect(0,0,overlayCanvas.width,overlayCanvas.height);
+  if(!end) return;
+  const w=mainCanvas.width, h=mainCanvas.height, minD=Math.min(w,h);
+  const str=brushStr/100;
+  if(brushType==='push'){
+    let dx=end.x-start.x, dy=end.y-start.y;
+    const len=Math.hypot(dx,dy);
+    if(len<4){ return; }                       // too small, ignore
+    const maxLen=brushSize*0.65;               // cap so it can't tear the photo
+    if(len>maxLen){ dx*=maxLen/len; dy*=maxLen/len; }
+    manualOps.push({
+      type:'push',
+      cx:start.x/w, cy:start.y/h,
+      r:brushSize/minD,
+      dx:(dx*str)/w, dy:(dy*str)/h
+    });
+  }else{
+    manualOps.push({
+      type:'bulge',
+      cx:start.x/w, cy:start.y/h,
+      r:brushSize/minD,
+      s:(brushType==='grow'?1:-1)*0.22*str
+    });
+  }
+  invalidateWarp(); scheduleRender();
+});
+window.addEventListener('pointercancel',()=>{ showOrig(false); dragStart=null; octx&&octx.clearRect(0,0,overlayCanvas.width,overlayCanvas.height); });
+stage.addEventListener('contextmenu',e=>{ if(fullImg) e.preventDefault(); });
+function showOrig(on){
+  if(!fullImg) return;
+  origCanvas.classList.toggle('show',on);
+  compareTag.classList.toggle('show',on);
+}
+
+/* ═══════════ reset ═══════════ */
+resetBtn.addEventListener('click',()=>{
+  params={...DEFAULTS}; activePreset='none';
+  manualOps=[]; autoOps=[]; autoPresetId='none'; autoIntensity=100;
+  intensitySlider.value=100; intensityVal.textContent='100'; paintRange(intensitySlider);
+  syncSliders(); markChips(); markAutoChips();
+  if(fullImg) setFaceStatus(landmarks?'ok':'idle');
+  invalidateWarp(); scheduleRender();
+  showToast('모든 보정값을 초기화했어요');
+});
+
+/* ═══════════ save (full-res re-render) ═══════════ */
+saveBtn.addEventListener('click',()=>{
+  if(!fullImg) return;
+  showBusy('고화질로 렌더링 중…');
+  setTimeout(()=>{
+    try{
+      const [w,h]=fitSize(fullImg.naturalWidth,fullImg.naturalHeight,EXPORT_MAX);
+      const c=document.createElement('canvas'); c.width=w; c.height=h;
+      const ctx=c.getContext('2d');
+      ctx.drawImage(fullImg,0,0,w,h);
+      let src=ctx.getImageData(0,0,w,h);
+      const ops=allOps();
+      if(ops.length) src=applyOps(src,ops);
+      const radius=Math.max(2,Math.round(Math.min(w,h)/110));
+      const blur=boxBlurRGB(src.data,w,h,radius);
+      const out=new ImageData(w,h);
+      processPixels(src,blur,w,h,params,out);
+      ctx.putImageData(out,0,0);
+      c.toBlob(blob=>{
+        hideBusy();
+        if(!blob){ showToast('저장에 실패했어요'); return; }
+        const a=document.createElement('a');
+        a.href=URL.createObjectURL(blob);
+        a.download='idol_retouch_'+Date.now()+'.jpg';
+        document.body.appendChild(a); a.click(); a.remove();
+        setTimeout(()=>URL.revokeObjectURL(a.href),4000);
+        showToast('✦ 고화질 사진이 저장됐어요');
+      },'image/jpeg',0.93);
+    }catch(err){
+      hideBusy();
+      showToast('저장 중 오류가 발생했어요');
+    }
+  },50);
+});
+
+/* ═══════════ busy / toast ═══════════ */
+function showBusy(msg){ busyMsg.textContent=msg||'처리 중…'; busy.classList.add('show'); }
+function hideBusy(){ busy.classList.remove('show'); }
+let toastTimer;
+function showToast(msg){
+  toast.textContent=msg;
+  toast.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer=setTimeout(()=>toast.classList.remove('show'),2400);
+}
+
+})();
+</script>
+</body>
+</html>
