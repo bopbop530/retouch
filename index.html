@@ -51,8 +51,10 @@
     border:1px solid var(--line);
     aspect-ratio:4/5;
     display:flex;align-items:center;justify-content:center;
-    touch-action:none;
+    touch-action:pan-y;
   }
+  .stage.editing{touch-action:none}
+  .viewport{position:absolute;inset:0;transform-origin:0 0;will-change:transform}
   .stage::before{
     content:"";position:absolute;inset:-1px;border-radius:var(--radius);pointer-events:none;z-index:6;
     background:linear-gradient(135deg,rgba(255,143,184,.35),transparent 30%,transparent 70%,rgba(185,166,255,.3));
@@ -68,9 +70,21 @@
     padding:5px 11px;border-radius:99px;opacity:0;transition:opacity .12s;pointer-events:none;
   }
   .compare-tag.show{opacity:1}
-  .hold-hint{
-    position:absolute;bottom:12px;right:12px;z-index:5;font-size:.66rem;color:rgba(255,255,255,.75);
-    background:rgba(0,0,0,.45);backdrop-filter:blur(6px);padding:5px 11px;border-radius:99px;pointer-events:none;
+  .cmp-btn{
+    position:absolute;bottom:12px;right:12px;z-index:5;
+    background:rgba(0,0,0,.55);backdrop-filter:blur(6px);
+    color:var(--gold);border:1px solid rgba(255,217,138,.45);
+    font-family:inherit;font-size:.74rem;font-weight:700;
+    padding:10px 15px;border-radius:99px;cursor:pointer;
+    user-select:none;-webkit-user-select:none;touch-action:none;
+  }
+  .cmp-btn:active{background:rgba(255,217,138,.25)}
+  .zoom-btn{
+    position:absolute;top:12px;right:12px;z-index:5;
+    background:rgba(0,0,0,.55);backdrop-filter:blur(6px);
+    color:#fff;border:1px solid var(--line);
+    font-family:inherit;font-size:.72rem;font-weight:700;
+    padding:8px 13px;border-radius:99px;cursor:pointer;
   }
   .busy{
     position:absolute;inset:0;z-index:7;display:none;flex-direction:column;gap:12px;align-items:center;justify-content:center;
@@ -205,11 +219,14 @@
   </header>
 
   <div class="stage" id="stage">
-    <canvas id="mainCanvas"></canvas>
-    <canvas id="origCanvas"></canvas>
-    <canvas id="overlayCanvas"></canvas>
+    <div class="viewport" id="viewport">
+      <canvas id="mainCanvas"></canvas>
+      <canvas id="origCanvas"></canvas>
+      <canvas id="overlayCanvas"></canvas>
+    </div>
     <div class="compare-tag" id="compareTag">원본 BEFORE</div>
-    <div class="hold-hint" id="holdHint" style="display:none">꾹 눌러서 원본 비교</div>
+    <button class="cmp-btn hidden" id="cmpBtn">⇆ 원본 보기</button>
+    <button class="zoom-btn hidden" id="zoomReset">↩ 1×</button>
     <div class="busy" id="busy"><div class="spinner"></div><span id="busyMsg">처리 중…</span></div>
     <div class="empty" id="empty">
       <div class="ring"><div class="ring-inner">📸</div></div>
@@ -287,7 +304,7 @@
 "use strict";
 
 /* ═══════════ state ═══════════ */
-const DEFAULTS = { smooth:0, glow:0, bright:0, contrast:0, warmth:0, pink:0, sat:0, sharp:0 };
+const DEFAULTS = { smooth:0, glow:0, bright:0, contrast:0, warmth:0, pink:0, sat:0, sharp:0, fade:0, vig:0 };
 let params = {...DEFAULTS};
 let fullImg = null;
 let previewData = null;       // original preview ImageData (never mutated)
@@ -314,13 +331,13 @@ const EXPORT_MAX = 2200;
 
 /* ═══════════ presets ═══════════ */
 const PRESETS = [
-  { id:'none',  name:'원본',     sub:'No filter',  gel:'linear-gradient(90deg,#555,#888)', p:{...DEFAULTS} },
-  { id:'mulgwang', name:'물광 피부', sub:'Dewy glow', gel:'linear-gradient(90deg,#ffd98a,#ff8fb8)', p:{smooth:55,glow:45,bright:14,contrast:4,warmth:10,pink:12,sat:6,sharp:10} },
-  { id:'dojagi',  name:'도자기',   sub:'Porcelain',  gel:'linear-gradient(90deg,#fdfbff,#cfd8ff)', p:{smooth:78,glow:18,bright:18,contrast:-4,warmth:-8,pink:8,sat:-10,sharp:6} },
-  { id:'cheongsun', name:'청순',   sub:'Soft & pure', gel:'linear-gradient(90deg,#ffc6dd,#ffe8f1)', p:{smooth:50,glow:30,bright:20,contrast:-6,warmth:4,pink:28,sat:-4,sharp:0} },
-  { id:'chic',   name:'시크 무드', sub:'Cold chic',  gel:'linear-gradient(90deg,#8fa8ff,#3d4b78)', p:{smooth:40,glow:10,bright:2,contrast:18,warmth:-22,pink:0,sat:-14,sharp:18} },
-  { id:'mv',     name:'MV 감성',  sub:'Cinematic',  gel:'linear-gradient(90deg,#16e0c0,#ff9a62)', p:{smooth:45,glow:25,bright:6,contrast:14,warmth:14,pink:6,sat:14,sharp:12} },
-  { id:'hwabo',  name:'잡지 화보', sub:'Editorial',  gel:'linear-gradient(90deg,#f5f5f5,#b9a6ff)', p:{smooth:35,glow:8,bright:8,contrast:22,warmth:0,pink:4,sat:8,sharp:32} },
+  { id:'none',    name:'원본',       sub:'No filter',    gel:'linear-gradient(90deg,#555,#888)', p:{} },
+  { id:'album',   name:'앨범 커버',   sub:'Studio clean', gel:'linear-gradient(90deg,#f5f5f5,#ffd6e6)', p:{smooth:32,glow:10,bright:6,contrast:12,warmth:-4,pink:4,sat:-6,sharp:24,fade:10,vig:10} },
+  { id:'window',  name:'윈도우 라이트', sub:'창가 자연광',   gel:'linear-gradient(90deg,#fff3d6,#ffd98a)', p:{smooth:34,glow:22,bright:10,contrast:-2,warmth:16,pink:8,sat:-2,sharp:10,fade:18,vig:8} },
+  { id:'golden',  name:'골든아워',    sub:'노을빛 야외',    gel:'linear-gradient(90deg,#ffb347,#ff6f61)', p:{smooth:28,glow:26,bright:8,contrast:6,warmth:28,pink:10,sat:8,sharp:12,fade:14,vig:16} },
+  { id:'daylight',name:'야외 자연광',  sub:'맑은 날 데일리', gel:'linear-gradient(90deg,#bfe3ff,#fdfdfd)', p:{smooth:22,glow:8,bright:12,contrast:8,warmth:2,pink:2,sat:4,sharp:18,fade:6,vig:4} },
+  { id:'hwabo',   name:'잡지 화보',   sub:'Editorial',    gel:'linear-gradient(90deg,#f5f5f5,#b9a6ff)', p:{smooth:35,glow:8,bright:8,contrast:22,warmth:0,pink:4,sat:8,sharp:32,fade:8,vig:14} },
+  { id:'mono',    name:'모노 화보',   sub:'흑백 B&W',      gel:'linear-gradient(90deg,#1a1a1a,#dddddd)', p:{smooth:30,glow:10,bright:6,contrast:26,warmth:0,pink:0,sat:-100,sharp:30,fade:12,vig:22} },
 ];
 
 const AUTO_PRESETS = [
@@ -338,8 +355,10 @@ const SLIDER_DEFS = [
   { key:'contrast',label:'대비',       min:-50, max:50  },
   { key:'warmth',  label:'색온도 (차갑게 ↔ 따뜻하게)', min:-50, max:50 },
   { key:'pink',    label:'핑크 톤업',   min:0,   max:100 },
-  { key:'sat',     label:'채도',       min:-50, max:50  },
+  { key:'sat',     label:'채도',       min:-100,max:50  },
   { key:'sharp',   label:'선명도',     min:0,   max:100 },
+  { key:'fade',    label:'필름 페이드', min:0,   max:50  },
+  { key:'vig',     label:'비네팅',     min:0,   max:50  },
 ];
 
 /* ═══════════ dom ═══════════ */
@@ -349,7 +368,7 @@ const mainCanvas=$('mainCanvas'), origCanvas=$('origCanvas'), overlayCanvas=$('o
       presetsEl=$('presets'), autoPresetsEl=$('autoPresets'),
       slidersEl=$('sliders'), saveBtn=$('saveBtn'), changeBtn=$('changeBtn'),
       resetBtn=$('resetBtn'), toast=$('toast'), busy=$('busy'), busyMsg=$('busyMsg'),
-      compareTag=$('compareTag'), holdHint=$('holdHint'),
+      compareTag=$('compareTag'),
       colorPane=$('colorPane'), contourPane=$('contourPane'),
       tabColor=$('tabColor'), tabContour=$('tabContour'),
       modeAuto=$('modeAuto'), modeManual=$('modeManual'),
@@ -380,9 +399,7 @@ function setContourMode(m){
 }
 function manualEditing(){ return curTab==='contour' && contourMode==='manual'; }
 function updateHint(){
-  if(!fullImg){ holdHint.style.display='none'; return; }
-  holdHint.style.display='block';
-  holdHint.textContent = manualEditing() ? '사진 위에서 드래그/탭 하세요' : '꾹 눌러서 원본 비교';
+  stage.classList.toggle('editing', manualEditing());
 }
 
 /* ═══════════ color preset chips ═══════════ */
@@ -393,7 +410,7 @@ PRESETS.forEach(pr=>{
   b.innerHTML=`<span class="gel" style="background:${pr.gel}"></span><b>${pr.name}</b><span>${pr.sub}</span>`;
   b.addEventListener('click',()=>{
     activePreset=pr.id;
-    params={...pr.p};
+    params={...DEFAULTS,...pr.p};
     syncSliders(); markChips(); scheduleRender();
   });
   presetsEl.appendChild(b);
@@ -616,7 +633,7 @@ fileInput.addEventListener('change',e=>{
     setupPreview();
     empty.classList.add('hidden');
     saveBtn.disabled=false; changeBtn.disabled=false;
-    updateHint();
+    updateHint(); resetView(); cmpBtn.classList.remove('hidden');
     scheduleRender();
   };
   img.onerror=()=>showToast('이미지를 불러올 수 없어요');
@@ -756,6 +773,9 @@ function processPixels(orig,blur,w,h,p,outData){
   const satF=1+p.sat/100;
   const sharpAmt=p.sharp/100*1.2;
   const sigma=34, twoSig2=2*sigma*sigma;
+  const fade=(p.fade||0)/100, vig=(p.vig||0)/100;
+  const vcx=w/2, vcy=h/2, vmax=Math.hypot(vcx,vcy);
+  let px=0, py=0;
   for(let i=0;i<n;i+=4){
     let r=o[i],g=o[i+1],b=o[i+2];
     const br_=blur[i],bg=blur[i+1],bb=blur[i+2];
@@ -778,6 +798,12 @@ function processPixels(orig,blur,w,h,p,outData){
     g=(g-128)*cont+128+bright;
     b=(b-128)*cont+128+bright;
     r+=warm; b-=warm;
+    if(fade>0){
+      const lift=fade*72;
+      let t1=1-r/255; if(t1<0)t1=0; r+=lift*t1*t1;
+      let t2=1-g/255; if(t2<0)t2=0; g+=lift*t2*t2;
+      let t3=1-b/255; if(t3<0)t3=0; b+=lift*t3*t3;
+    }
     if(pink>0){
       const lum=(r*0.299+g*0.587+b*0.114)/255;
       const mid=4*lum*(1-lum);
@@ -788,6 +814,13 @@ function processPixels(orig,blur,w,h,p,outData){
       const lum=r*0.299+g*0.587+b*0.114;
       r=lum+(r-lum)*satF; g=lum+(g-lum)*satF; b=lum+(b-lum)*satF;
     }
+    if(vig>0){
+      const vdx=(px-vcx)/vmax, vdy=(py-vcy)/vmax;
+      const dd=vdx*vdx+vdy*vdy;
+      const vv=1-vig*1.15*dd*Math.sqrt(dd);
+      r*=vv; g*=vv; b*=vv;
+    }
+    px++; if(px===w){px=0;py++;}
     out[i]=r<0?0:r>255?255:r;
     out[i+1]=g<0?0:g>255?255:g;
     out[i+2]=b<0?0:b>255?255:b;
@@ -818,9 +851,42 @@ function scheduleRender(){
   requestAnimationFrame(()=>{ renderQueued=false; renderPreview(); });
 }
 
-/* ═══════════ stage pointer: compare vs liquify ═══════════ */
+/* ═══════════ zoom / pan / compare / liquify gestures ═══════════ */
+const viewport=$('viewport'), cmpBtn=$('cmpBtn'), zoomResetBtn=$('zoomReset');
 const octx=overlayCanvas.getContext('2d');
-let dragStart=null;
+const view={s:1,tx:0,ty:0};
+function applyView(){
+  viewport.style.transform='translate('+view.tx+'px,'+view.ty+'px) scale('+view.s+')';
+  zoomResetBtn.classList.toggle('hidden',view.s<=1.01);
+}
+function clampView(){
+  if(view.s<=1){view.s=1;view.tx=0;view.ty=0;return;}
+  if(view.s>5) view.s=5;
+  const W=stage.clientWidth,H=stage.clientHeight;
+  view.tx=Math.min(0,Math.max(W*(1-view.s),view.tx));
+  view.ty=Math.min(0,Math.max(H*(1-view.s),view.ty));
+}
+function resetView(){view.s=1;view.tx=0;view.ty=0;applyView();}
+zoomResetBtn.addEventListener('click',e=>{e.stopPropagation();resetView();});
+
+/* compare: press-and-hold the button (photo stays free for scroll/zoom) */
+cmpBtn.addEventListener('pointerdown',e=>{
+  e.stopPropagation(); e.preventDefault();
+  try{cmpBtn.setPointerCapture(e.pointerId);}catch(_){}
+  showOrig(true);
+});
+cmpBtn.addEventListener('pointerup',()=>showOrig(false));
+cmpBtn.addEventListener('pointercancel',()=>showOrig(false));
+window.addEventListener('pointerup',()=>showOrig(false));
+function showOrig(on){
+  if(!fullImg) return;
+  origCanvas.classList.toggle('show',on);
+  compareTag.classList.toggle('show',on);
+}
+
+const pointers=new Map();
+let gesture=null, dragStart=null, lastMid=null, lastDist=0, lastTap={t:0,x:0,y:0};
+
 function stageToCanvas(e){
   const rect=mainCanvas.getBoundingClientRect();
   const cw=mainCanvas.width, ch=mainCanvas.height;
@@ -829,13 +895,17 @@ function stageToCanvas(e){
   const dispW=cw*scale, dispH=ch*scale;
   const offX=rect.left+(rect.width-dispW)/2;
   const offY=rect.top+(rect.height-dispH)/2;
-  return { x:(e.clientX-offX)/scale, y:(e.clientY-offY)/scale, scale };
+  return { x:(e.clientX-offX)/scale, y:(e.clientY-offY)/scale };
+}
+function stagePoint(e){
+  const r=stage.getBoundingClientRect();
+  return {x:e.clientX-r.left,y:e.clientY-r.top};
 }
 function drawBrushOverlay(p,p2){
   octx.clearRect(0,0,overlayCanvas.width,overlayCanvas.height);
   if(!p) return;
   octx.strokeStyle='rgba(255,217,138,.95)';
-  octx.lineWidth=2;
+  octx.lineWidth=2/view.s;
   octx.setLineDash([6,5]);
   octx.beginPath();
   octx.arc(p.x,p.y,brushSize,0,Math.PI*2);
@@ -843,68 +913,121 @@ function drawBrushOverlay(p,p2){
   octx.setLineDash([]);
   if(p2){
     octx.strokeStyle='rgba(255,143,184,.95)';
-    octx.lineWidth=3;
+    octx.lineWidth=3/view.s;
     octx.beginPath(); octx.moveTo(p.x,p.y); octx.lineTo(p2.x,p2.y); octx.stroke();
     octx.fillStyle='rgba(255,143,184,.95)';
     octx.beginPath(); octx.arc(p2.x,p2.y,5,0,Math.PI*2); octx.fill();
   }
 }
+function clearOverlay(){ octx.clearRect(0,0,overlayCanvas.width,overlayCanvas.height); }
+
 stage.addEventListener('pointerdown',e=>{
   if(!fullImg) return;
-  e.preventDefault();
-  if(manualEditing()){
-    const p=stageToCanvas(e);
-    if(!p) return;
-    dragStart=p;
-    drawBrushOverlay(p);
-    stage.setPointerCapture(e.pointerId);
-  }else{
-    showOrig(true);
+  try{stage.setPointerCapture(e.pointerId);}catch(_){}
+  if(pointers.size===1 && gesture!=='pinch'){
+    /* second finger lands → pinch zoom */
+    pointers.set(e.pointerId,{x:e.clientX,y:e.clientY});
+    gesture='pinch'; dragStart=null; clearOverlay();
+    const pts=[...pointers.values()];
+    lastDist=Math.hypot(pts[0].x-pts[1].x,pts[0].y-pts[1].y);
+    const r=stage.getBoundingClientRect();
+    lastMid={x:(pts[0].x+pts[1].x)/2-r.left,y:(pts[0].y+pts[1].y)/2-r.top};
+    return;
+  }
+  pointers.set(e.pointerId,{x:e.clientX,y:e.clientY});
+  if(pointers.size===1){
+    if(manualEditing()){
+      gesture='edit';
+      const p=stageToCanvas(e);
+      dragStart=p; if(p) drawBrushOverlay(p);
+    } else if(view.s>1.01){
+      gesture='pan';
+    } else {
+      gesture=null; /* one finger, not zoomed → let the page scroll */
+    }
   }
 });
 stage.addEventListener('pointermove',e=>{
-  if(!fullImg||!manualEditing()||!dragStart) return;
-  const p=stageToCanvas(e);
-  if(p) drawBrushOverlay(dragStart,brushType==='push'?p:null);
+  if(!fullImg||!pointers.has(e.pointerId)) return;
+  const prev=pointers.get(e.pointerId);
+  pointers.set(e.pointerId,{x:e.clientX,y:e.clientY});
+  if(gesture==='pinch'&&pointers.size>=2){
+    const pts=[...pointers.values()];
+    const r=stage.getBoundingClientRect();
+    const mid={x:(pts[0].x+pts[1].x)/2-r.left,y:(pts[0].y+pts[1].y)/2-r.top};
+    const dist=Math.hypot(pts[0].x-pts[1].x,pts[0].y-pts[1].y);
+    if(lastDist>4){
+      const ns=Math.min(5,Math.max(1,view.s*dist/lastDist));
+      view.tx=mid.x-((lastMid.x-view.tx)/view.s)*ns;
+      view.ty=mid.y-((lastMid.y-view.ty)/view.s)*ns;
+      view.s=ns;
+      clampView(); applyView();
+    }
+    lastDist=dist; lastMid=mid;
+  } else if(gesture==='pan'){
+    view.tx+=e.clientX-prev.x;
+    view.ty+=e.clientY-prev.y;
+    clampView(); applyView();
+  } else if(gesture==='edit'&&dragStart){
+    const p=stageToCanvas(e);
+    if(p) drawBrushOverlay(dragStart,brushType==='push'?p:null);
+  }
 });
 stage.addEventListener('pointerup',e=>{
-  showOrig(false);
-  if(!fullImg||!manualEditing()||!dragStart) return;
-  const end=stageToCanvas(e);
-  const start=dragStart; dragStart=null;
-  octx.clearRect(0,0,overlayCanvas.width,overlayCanvas.height);
-  if(!end) return;
-  const w=mainCanvas.width, h=mainCanvas.height, minD=Math.min(w,h);
+  if(!pointers.has(e.pointerId)) return;
+  pointers.delete(e.pointerId);
+  if(gesture==='pinch'){
+    if(pointers.size<2){ lastDist=0; gesture=null; }
+    return;
+  }
+  if(gesture==='edit'){
+    gesture=null;
+    const end=stageToCanvas(e);
+    const start=dragStart; dragStart=null;
+    clearOverlay();
+    if(start&&end) commitStroke(start,end);
+    return;
+  }
+  if(gesture==='pan') gesture=null;
+  /* double-tap zoom (viewing modes only) */
+  if(!manualEditing()){
+    const now=Date.now(), sp=stagePoint(e);
+    if(now-lastTap.t<300 && Math.hypot(sp.x-lastTap.x,sp.y-lastTap.y)<30){
+      if(view.s>1.01) resetView();
+      else{
+        const ns=2.5;
+        view.tx=sp.x-(sp.x-view.tx)*ns/view.s;
+        view.ty=sp.y-(sp.y-view.ty)*ns/view.s;
+        view.s=ns; clampView(); applyView();
+      }
+      lastTap={t:0,x:0,y:0};
+    } else lastTap={t:now,x:sp.x,y:sp.y};
+  }
+});
+stage.addEventListener('pointercancel',e=>{
+  pointers.delete(e.pointerId);
+  if(pointers.size===0){ gesture=null; dragStart=null; lastDist=0; clearOverlay(); }
+});
+function commitStroke(start,end){
+  const w=mainCanvas.width,h=mainCanvas.height,minD=Math.min(w,h);
   const str=brushStr/100;
   if(brushType==='push'){
     let dx=end.x-start.x, dy=end.y-start.y;
     const len=Math.hypot(dx,dy);
-    if(len<4){ return; }                       // too small, ignore
-    const maxLen=brushSize*0.65;               // cap so it can't tear the photo
-    if(len>maxLen){ dx*=maxLen/len; dy*=maxLen/len; }
-    manualOps.push({
-      type:'push',
-      cx:start.x/w, cy:start.y/h,
-      r:brushSize/minD,
-      dx:(dx*str)/w, dy:(dy*str)/h
-    });
+    if(len<4) return;
+    const maxLen=brushSize*0.65;
+    if(len>maxLen){dx*=maxLen/len;dy*=maxLen/len;}
+    manualOps.push({type:'push',cx:start.x/w,cy:start.y/h,r:brushSize/minD,dx:dx*str/w,dy:dy*str/h});
   }else{
-    manualOps.push({
-      type:'bulge',
-      cx:start.x/w, cy:start.y/h,
-      r:brushSize/minD,
-      s:(brushType==='grow'?1:-1)*0.22*str
-    });
+    manualOps.push({type:'bulge',cx:start.x/w,cy:start.y/h,r:brushSize/minD,s:(brushType==='grow'?1:-1)*0.22*str});
   }
   invalidateWarp(); scheduleRender();
-});
-window.addEventListener('pointercancel',()=>{ showOrig(false); dragStart=null; octx&&octx.clearRect(0,0,overlayCanvas.width,overlayCanvas.height); });
-stage.addEventListener('contextmenu',e=>{ if(fullImg) e.preventDefault(); });
-function showOrig(on){
-  if(!fullImg) return;
-  origCanvas.classList.toggle('show',on);
-  compareTag.classList.toggle('show',on);
 }
+stage.addEventListener('contextmenu',e=>{ if(fullImg) e.preventDefault(); });
+/* photo lets the page scroll normally; only capture touches when editing, pinching, or zoomed-in panning */
+function shouldCapture(t){ return t>=2 || manualEditing() || view.s>1.01; }
+stage.addEventListener('touchstart',e=>{ if(fullImg&&shouldCapture(e.touches.length)) e.preventDefault(); },{passive:false});
+stage.addEventListener('touchmove',e=>{ if(fullImg&&shouldCapture(e.touches.length)) e.preventDefault(); },{passive:false});
 
 /* ═══════════ reset ═══════════ */
 resetBtn.addEventListener('click',()=>{
@@ -913,6 +1036,7 @@ resetBtn.addEventListener('click',()=>{
   intensitySlider.value=100; intensityVal.textContent='100'; paintRange(intensitySlider);
   syncSliders(); markChips(); markAutoChips();
   if(fullImg) setFaceStatus(landmarks?'ok':'idle');
+  resetView();
   invalidateWarp(); scheduleRender();
   showToast('모든 보정값을 초기화했어요');
 });
