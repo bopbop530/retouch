@@ -1,0 +1,16 @@
+{
+  "name": "아이돌 보정실",
+  "short_name": "보정실",
+  "description": "셀카 보정 스튜디오 — 나만의 보정 스타일을 학습하는 포토 에디터",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#121016",
+  "theme_color": "#121016",
+  "icons": [
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "apple-touch-icon.png", "sizes": "180x180", "type": "image/png" }
+  ]
+}
