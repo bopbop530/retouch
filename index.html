@@ -1,0 +1,2644 @@
+<!DOCTYPE html>
+<!-- ═══════════════════════════════════════════════════════════════
+  아이돌 보정실 — VERSION CHANGELOG (백업: ../_backups/retouch/)
+  v7 · 2026-07-15 · 코드 리뷰 라운드: 일괄 썸네일 순차 로딩(메모리),
+                    toBlob null 폴백(저장·자르기), 자르기 캔버스 3600px 캡,
+                    얼굴 인식 동시 실행 가드, 더블탭 초기화 스크롤 오작동 방지,
+                    블러 3.6배 최적화, 톤/스무딩 LUT, 프리뷰 버퍼 재사용
+  v6 · 2026-07-15 · AI 모델 내장(mediapipe/ 폴더, CDN 의존 제거), 백업 체계 도입
+  v5 · 2026-07-15 · 프로 프리셋 라운드: 플래시/파스텔/필름 추가, 지브리 맨 뒤,
+                    골든아워·MV·앨범커버·모노 값 보정, 필름 그레인 슬라이더,
+                    광대 축소·얼굴 축소(소두) 윤곽 프리셋, 코 슬림 콧대+팁 업그레이드,
+                    풀패키지 프로 비율(턱100/광대90/코80/눈55), 학습 프로필 v4(5개 부위)
+  v4 · 2026-07-15 · UI/UX 라운드: 프리셋 실사진 썸네일, 조정값 표시(점+뱃지),
+                    ✂/💖 버튼 사진 밖 액션바로 이동, 슬라이더 더블탭 초기화,
+                    그룹 아이콘, 첫 실행 제스처 힌트
+  v3 · 2026-07-15 · P0/P1 라운드: 학습 가드레일(확인바+최근 학습 취소),
+                    자르기/회전/수평, 일괄 보정(최대 30장), 잡티 브러시,
+                    치아 미백, 저장 품질 선택(2200/3000px)
+  v2 · 2026-06-21 · 최초 출시: 컬러 프리셋, 윤곽 성형(AI/수동), 전후 학습, 클라우드 동기화
+════════════════════════════════════════════════════════════════ -->
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>아이돌 보정실 — Idol Retouch Studio</title>
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="아이돌 보정실">
+<meta name="theme-color" content="#121016">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable.min.css">
+<style>
+  :root{
+    --bg:#121016;
+    --panel:#1c1922;
+    --panel2:#242030;
+    --line:#332e40;
+    --ink:#f4f1f8;
+    --sub:#9a92ab;
+    --rose:#ff8fb8;
+    --rose-deep:#f25d97;
+    --gold:#ffd98a;
+    --lav:#b9a6ff;
+    --radius:18px;
+    font-size:16px;
+  }
+  *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{height:100%}
+  body{
+    font-family:'Pretendard Variable',Pretendard,-apple-system,'Apple SD Gothic Neo','Noto Sans KR',sans-serif;
+    background:var(--bg);
+    color:var(--ink);
+    overscroll-behavior:none;
+  }
+  .app{max-width:520px;margin:0 auto;min-height:100dvh;display:flex;flex-direction:column;padding:env(safe-area-inset-top) 16px calc(96px + env(safe-area-inset-bottom))}
+
+  /* ── header ───────────────────── */
+  header{padding:20px 4px 14px;display:flex;align-items:baseline;justify-content:space-between}
+  .brand{display:flex;flex-direction:column;gap:3px}
+  .eyebrow{font-size:.65rem;letter-spacing:.32em;color:var(--rose);font-weight:700;text-transform:uppercase}
+  h1{font-size:1.45rem;font-weight:800;letter-spacing:-.02em}
+  h1 .light{background:linear-gradient(90deg,var(--rose),var(--gold) 60%,var(--lav));-webkit-background-clip:text;background-clip:text;color:transparent}
+  .reset-btn{background:none;border:1px solid var(--line);color:var(--sub);font-size:.75rem;padding:7px 13px;border-radius:99px;cursor:pointer;font-family:inherit}
+  .reset-btn:active{background:var(--panel2)}
+
+  /* ── stage ────────────────────── */
+  .stage{
+    position:relative;border-radius:var(--radius);overflow:hidden;background:var(--panel);
+    border:1px solid var(--line);
+    aspect-ratio:4/5;
+    display:flex;align-items:center;justify-content:center;
+    touch-action:pan-y;
+  }
+  .stage.editing{touch-action:none}
+  .viewport{position:absolute;inset:0;transform-origin:0 0;will-change:transform}
+  .stage::before{
+    content:"";position:absolute;inset:-1px;border-radius:var(--radius);pointer-events:none;z-index:6;
+    background:linear-gradient(135deg,rgba(255,143,184,.35),transparent 30%,transparent 70%,rgba(185,166,255,.3));
+    -webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);-webkit-mask-composite:xor;mask-composite:exclude;padding:1px;
+  }
+  canvas{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;background:#000}
+  #origCanvas{z-index:2;opacity:0;transition:opacity .12s}
+  #origCanvas.show{opacity:1}
+  #overlayCanvas{z-index:3;background:transparent;pointer-events:none}
+  .compare-tag{
+    position:absolute;top:12px;left:50%;transform:translateX(-50%);z-index:5;font-size:.68rem;font-weight:700;letter-spacing:.08em;
+    background:rgba(0,0,0,.55);backdrop-filter:blur(6px);color:var(--gold);
+    padding:5px 11px;border-radius:99px;opacity:0;transition:opacity .12s;pointer-events:none;
+  }
+  .compare-tag.show{opacity:1}
+  .cmp-btn{
+    position:absolute;bottom:12px;right:12px;z-index:5;
+    background:rgba(0,0,0,.55);backdrop-filter:blur(6px);
+    color:var(--gold);border:1px solid rgba(255,217,138,.45);
+    font-family:inherit;font-size:.74rem;font-weight:700;
+    padding:10px 15px;border-radius:99px;cursor:pointer;
+    user-select:none;-webkit-user-select:none;touch-action:none;
+  }
+  .cmp-btn:active{background:rgba(255,217,138,.25)}
+  .zoom-btn{
+    position:absolute;top:12px;right:12px;z-index:5;
+    background:rgba(0,0,0,.55);backdrop-filter:blur(6px);
+    color:#fff;border:1px solid var(--line);
+    font-family:inherit;font-size:.72rem;font-weight:700;
+    padding:8px 13px;border-radius:99px;cursor:pointer;
+  }
+  .busy{
+    position:absolute;inset:0;z-index:7;display:none;flex-direction:column;gap:12px;align-items:center;justify-content:center;
+    background:rgba(18,16,22,.45);backdrop-filter:blur(3px);
+  }
+  .busy.show{display:flex}
+  .busy span{font-size:.75rem;color:var(--ink);font-weight:600;background:rgba(0,0,0,.5);padding:6px 14px;border-radius:99px}
+  .spinner{width:34px;height:34px;border-radius:50%;border:3px solid rgba(255,143,184,.25);border-top-color:var(--rose);animation:spin .8s linear infinite}
+  @keyframes spin{to{transform:rotate(360deg)}}
+
+  /* ── empty / upload ───────────── */
+  .empty{
+    position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;
+    cursor:pointer;z-index:8;background:
+      radial-gradient(120% 90% at 20% 0%,rgba(255,143,184,.10),transparent 55%),
+      radial-gradient(120% 90% at 90% 100%,rgba(185,166,255,.10),transparent 55%),
+      var(--panel);
+  }
+  .empty.hidden{display:none}
+  .ring{
+    width:84px;height:84px;border-radius:50%;display:flex;align-items:center;justify-content:center;
+    background:conic-gradient(var(--rose),var(--gold),var(--lav),var(--rose));
+    animation:hue 6s linear infinite;
+  }
+  @keyframes hue{to{filter:hue-rotate(360deg)}}
+  .ring-inner{width:74px;height:74px;border-radius:50%;background:var(--panel);display:flex;align-items:center;justify-content:center}
+  .ring-inner svg{width:38px;height:38px;display:block}
+  .empty b{font-size:1.05rem;font-weight:700}
+  .empty span{font-size:.78rem;color:var(--sub)}
+
+  /* ── tabs ─────────────────────── */
+  .tabs{display:flex;gap:8px;margin-top:18px}
+  .tab{
+    flex:1;border:1px solid var(--line);background:var(--panel);color:var(--sub);
+    border-radius:14px;padding:12px 0;font-family:inherit;font-size:.88rem;font-weight:700;cursor:pointer;
+  }
+  .tab.on{background:var(--panel2);border-color:var(--rose);color:var(--rose)}
+
+  /* ── sections ─────────────────── */
+  .section-label{font-size:.66rem;letter-spacing:.26em;color:var(--sub);font-weight:700;margin:20px 4px 10px;text-transform:uppercase}
+  .presets{display:flex;gap:9px;overflow-x:auto;padding:2px 2px 8px;scrollbar-width:none}
+  .presets::-webkit-scrollbar{display:none}
+  .chip{
+    flex:0 0 auto;border:1px solid var(--line);background:var(--panel);color:var(--ink);
+    border-radius:14px;padding:10px 14px;cursor:pointer;font-family:inherit;text-align:left;min-width:88px;
+    transition:border-color .15s, background .15s;
+  }
+  .chip .gel{display:block;width:100%;height:5px;border-radius:99px;margin-bottom:8px}
+  .chip .thumb{display:none;width:100%;aspect-ratio:3/4;border-radius:9px;margin-bottom:7px;background:#000}
+  .chip.has-thumb{min-width:96px;padding:8px 9px 9px}
+  .chip.has-thumb .gel{display:none}
+  .chip.has-thumb .thumb{display:block}
+  .chip b{display:block;font-size:.83rem;font-weight:700;letter-spacing:-.01em}
+  .chip span{display:block;font-size:.63rem;color:var(--sub);margin-top:2px}
+  .chip.on{border-color:var(--rose);background:var(--panel2)}
+  .chip.on b{color:var(--rose)}
+
+  .sliders{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:8px 16px 8px}
+  .sgroup-head{display:flex;align-items:center;justify-content:space-between;padding:14px 2px 6px;cursor:pointer;user-select:none;-webkit-user-select:none}
+  .sgroup-head b{font-size:.74rem;letter-spacing:.12em;color:var(--rose);font-weight:700;text-transform:uppercase}
+  .sgroup-head .hrt{display:flex;align-items:center;gap:8px}
+  .sgroup-head .gcount{display:none;font-size:.6rem;background:var(--rose);color:#2a0d1b;font-weight:800;border-radius:99px;min-width:17px;height:17px;align-items:center;justify-content:center;padding:0 5px}
+  .sgroup.has-edits .gcount{display:inline-flex}
+  .sgroup-head .chev{color:var(--sub);font-size:.8rem;transition:transform .2s}
+  .sgroup.closed .chev{transform:rotate(-90deg)}
+  .sgroup-body{overflow:hidden}
+  .sgroup.closed .sgroup-body{display:none}
+  .sgroup + .sgroup{border-top:1px solid var(--line)}
+  .srow{margin-bottom:18px}
+  .srow .top{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:7px}
+  .srow label{font-size:.82rem;font-weight:600}
+  .srow .val{font-size:.74rem;color:var(--sub);font-variant-numeric:tabular-nums;font-weight:700;transition:color .15s}
+  .srow.adjusted .val{color:var(--rose)}
+  .srow.adjusted label::after{content:'';display:inline-block;width:5px;height:5px;border-radius:50%;background:var(--rose);margin-left:6px;vertical-align:2px}
+  input[type=range]{-webkit-appearance:none;appearance:none;width:100%;height:30px;background:transparent;cursor:pointer;touch-action:pan-y}
+  /* custom scroll-safe slider (디테일 보정) */
+  .ss{position:relative;height:34px;touch-action:pan-y;user-select:none;-webkit-user-select:none}
+  .ss-track{position:absolute;left:11px;right:11px;top:50%;transform:translateY(-50%);height:5px;border-radius:99px;background:#39334a;overflow:visible}
+  .ss-fill{position:absolute;top:0;left:0;height:100%;border-radius:99px;background:linear-gradient(90deg,var(--rose-deep),var(--rose))}
+  .ss-thumb{position:absolute;top:50%;width:22px;height:22px;border-radius:50%;background:#fff;transform:translate(-50%,-50%);box-shadow:0 1px 6px rgba(0,0,0,.5),0 0 0 3px rgba(255,143,184,.25);transition:box-shadow .12s}
+  .ss.grabbed .ss-thumb{box-shadow:0 1px 8px rgba(0,0,0,.6),0 0 0 6px rgba(255,143,184,.4)}
+  input[type=range]::-webkit-slider-runnable-track{height:4px;border-radius:99px;background:linear-gradient(90deg,var(--rose-deep),var(--rose) var(--fill,50%),#39334a var(--fill,50%))}
+  input[type=range]::-webkit-slider-thumb{
+    -webkit-appearance:none;width:20px;height:20px;border-radius:50%;background:#fff;margin-top:-8px;
+    box-shadow:0 1px 6px rgba(0,0,0,.5),0 0 0 3px rgba(255,143,184,.25);
+  }
+  input[type=range]::-moz-range-track{height:4px;border-radius:99px;background:#39334a}
+  input[type=range]::-moz-range-progress{height:4px;border-radius:99px;background:var(--rose)}
+  input[type=range]::-moz-range-thumb{width:20px;height:20px;border-radius:50%;background:#fff;border:none;box-shadow:0 1px 6px rgba(0,0,0,.5)}
+
+  /* ── contour panel ────────────── */
+  .seg{display:flex;background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:4px;gap:4px}
+  .seg button{
+    flex:1;border:none;background:transparent;color:var(--sub);font-family:inherit;font-size:.84rem;font-weight:700;
+    padding:10px 0;border-radius:11px;cursor:pointer;
+  }
+  .seg button.on{background:var(--panel2);color:var(--rose);box-shadow:inset 0 0 0 1px var(--rose)}
+  .panel{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:16px;margin-top:12px}
+  .face-status{display:flex;align-items:center;gap:8px;font-size:.75rem;color:var(--sub);margin-bottom:12px}
+  .dot{width:8px;height:8px;border-radius:50%;background:#555}
+  .dot.ok{background:#5ee8a4;box-shadow:0 0 8px rgba(94,232,164,.6)}
+  .dot.fail{background:#ff6b6b}
+  .brushes{display:flex;gap:8px;margin-bottom:14px}
+  .brush{
+    flex:1;border:1px solid var(--line);background:var(--panel2);color:var(--ink);border-radius:12px;
+    padding:11px 0;font-family:inherit;font-size:.8rem;font-weight:700;cursor:pointer;
+  }
+  .brush small{display:block;font-weight:500;font-size:.62rem;color:var(--sub);margin-top:2px}
+  .brush.on{border-color:var(--gold);color:var(--gold)}
+  .row-btns{display:flex;gap:8px;margin-top:4px}
+  .mini-btn{
+    flex:1;border:1px solid var(--line);background:transparent;color:var(--sub);border-radius:11px;
+    padding:10px 0;font-family:inherit;font-size:.78rem;font-weight:600;cursor:pointer;
+  }
+  .mini-btn:active{background:var(--panel2)}
+  .hint{font-size:.72rem;color:var(--sub);line-height:1.55;margin-top:10px}
+  .hint b{color:var(--gold);font-weight:700}
+  .hidden{display:none!important}
+
+  /* ── training modal ───────────── */
+  .modal{position:fixed;inset:0;z-index:50;background:rgba(0,0,0,.6);backdrop-filter:blur(4px);display:flex;align-items:flex-end;justify-content:center}
+  .modal-card{background:var(--panel);border:1px solid var(--line);border-radius:22px 22px 0 0;padding:20px 18px calc(24px + env(safe-area-inset-bottom));width:100%;max-width:520px;max-height:88dvh;overflow-y:auto}
+  .modal-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px}
+  .modal-head b{font-size:1.05rem}
+  .modal-head button{background:none;border:none;color:var(--sub);font-size:1.15rem;cursor:pointer;padding:4px 10px;font-family:inherit}
+  .calib-slots{display:flex;gap:10px;margin-top:12px}
+  .calib-slot{flex:1;aspect-ratio:3/4;border:1.5px dashed var(--line);border-radius:14px;display:flex;align-items:center;justify-content:center;text-align:center;font-size:.78rem;color:var(--sub);cursor:pointer;overflow:hidden;position:relative;line-height:1.6}
+  .calib-slot img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+  .calib-slot.done{border-color:var(--rose);border-style:solid}
+
+  /* ── bottom bar ───────────────── */
+  .bar{
+    position:fixed;bottom:0;left:0;right:0;z-index:20;
+    background:linear-gradient(transparent,rgba(18,16,22,.92) 30%);
+    padding:18px 16px calc(14px + env(safe-area-inset-bottom));
+  }
+  .bar-inner{max-width:520px;margin:0 auto;display:flex;gap:10px}
+  .btn{flex:1;border:none;border-radius:16px;padding:15px 0;font-size:.95rem;font-weight:800;font-family:inherit;cursor:pointer;letter-spacing:-.01em}
+  .btn:disabled{opacity:.35}
+  .btn-ghost{background:var(--panel2);color:var(--ink);border:1px solid var(--line);flex:0 0 auto;padding:15px 18px}
+  .btn-save{
+    background:linear-gradient(110deg,var(--rose-deep),var(--rose) 55%,var(--gold));color:#2a0d1b;
+    box-shadow:0 6px 24px rgba(242,93,151,.35);
+  }
+  .btn-save:active{transform:translateY(1px)}
+  .toast{
+    position:fixed;left:50%;bottom:110px;transform:translateX(-50%) translateY(8px);z-index:30;
+    background:rgba(0,0,0,.8);backdrop-filter:blur(8px);color:#fff;font-size:.8rem;font-weight:600;
+    padding:10px 18px;border-radius:99px;opacity:0;pointer-events:none;transition:.25s;white-space:normal;text-align:center;line-height:1.5;max-width:88vw;
+  }
+  .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+  /* ── action row (사진 아래) ────── */
+  .action-row{display:flex;gap:8px;margin-top:12px}
+  .magic-cta{
+    flex:2;border:1px solid rgba(255,143,184,.55);
+    background:linear-gradient(110deg,rgba(242,93,151,.18),rgba(255,217,138,.14));
+    color:var(--rose);border-radius:14px;padding:13px 0;
+    font-family:inherit;font-size:.9rem;font-weight:800;cursor:pointer;letter-spacing:-.01em;
+  }
+  .magic-cta:active{background:rgba(242,93,151,.28)}
+  .action-btn{
+    flex:1;border:1px solid var(--line);background:var(--panel);color:var(--ink);
+    border-radius:14px;padding:13px 0;font-family:inherit;font-size:.86rem;font-weight:700;cursor:pointer;
+  }
+  .action-btn:active{background:var(--panel2)}
+
+  /* ── crop modal ───────────────── */
+  .crop-stage{height:46dvh;background:#000;border-radius:14px;display:flex;align-items:center;justify-content:center;overflow:hidden;touch-action:none;margin-top:4px}
+  #cropCanvas{touch-action:none;display:block}
+  .crop-aspects{display:flex;gap:8px;margin-top:12px}
+  .crop-aspects button{flex:1;border:1px solid var(--line);background:var(--panel2);color:var(--sub);border-radius:10px;padding:9px 0;font-family:inherit;font-size:.76rem;font-weight:700;cursor:pointer}
+  .crop-aspects button.on{border-color:var(--rose);color:var(--rose)}
+
+  /* ── batch ────────────────────── */
+  .batch-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:12px}
+  .batch-item{position:relative;aspect-ratio:3/4;border-radius:10px;overflow:hidden;border:1px solid var(--line);background:var(--panel2)}
+  .batch-item img{width:100%;height:100%;object-fit:cover;display:block}
+  .batch-status{position:absolute;top:6px;right:6px;font-size:.8rem;font-weight:800;background:rgba(0,0,0,.6);border-radius:99px;padding:2px 7px;color:#fff}
+  .batch-status.ok{color:#5ee8a4}
+  .batch-status.bad{color:#ff6b6b}
+
+  /* ── learn confirm bar ────────── */
+  .learn-bar{
+    position:fixed;left:50%;bottom:158px;transform:translateX(-50%);z-index:31;
+    display:flex;gap:8px;align-items:center;
+    background:rgba(0,0,0,.85);backdrop-filter:blur(8px);
+    padding:9px 10px 9px 16px;border-radius:99px;border:1px solid var(--line);
+    font-size:.78rem;font-weight:600;white-space:nowrap;max-width:94vw;
+  }
+  .learn-bar button{border:none;border-radius:99px;padding:8px 13px;font-family:inherit;font-weight:700;font-size:.76rem;cursor:pointer}
+  #learnYes{background:linear-gradient(110deg,var(--rose-deep),var(--rose));color:#2a0d1b}
+  #learnNo{background:var(--panel2);color:var(--sub)}
+
+  @media (prefers-reduced-motion: reduce){
+    .ring{animation:none}
+    *{transition:none!important}
+  }
+</style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <div class="brand">
+      <div class="eyebrow">K-pop Retouch Studio</div>
+      <h1>아이돌 <span class="light">보정실</span></h1>
+    </div>
+    <div style="display:flex;gap:8px">
+      <button class="reset-btn" id="trainBtn">⚙️ 학습</button>
+      <button class="reset-btn" id="resetBtn">초기화</button>
+    </div>
+  </header>
+
+  <div class="stage" id="stage">
+    <div class="viewport" id="viewport">
+      <canvas id="mainCanvas"></canvas>
+      <canvas id="origCanvas"></canvas>
+      <canvas id="overlayCanvas"></canvas>
+    </div>
+    <div class="compare-tag" id="compareTag">원본 BEFORE</div>
+    <button class="cmp-btn hidden" id="cmpBtn">⇆ 원본 보기</button>
+    <button class="zoom-btn hidden" id="zoomReset">↩ 1×</button>
+    <div class="busy" id="busy"><div class="spinner"></div><span id="busyMsg">처리 중…</span></div>
+    <div class="empty" id="empty">
+      <div class="ring"><div class="ring-inner"><svg viewBox="0 0 24 24" fill="none" stroke="url(#camg)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><defs><linearGradient id="camg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#ff8fb8"/><stop offset="0.5" stop-color="#ffd98a"/><stop offset="1" stop-color="#b9a6ff"/></linearGradient></defs><path d="M3 8.5A1.5 1.5 0 0 1 4.5 7h2.2l.9-1.6A1 1 0 0 1 8.5 5h7a1 1 0 0 1 .9.4L17.3 7h2.2A1.5 1.5 0 0 1 21 8.5v9A1.5 1.5 0 0 1 19.5 19h-15A1.5 1.5 0 0 1 3 17.5z"/><circle cx="12" cy="13" r="3.4"/></svg></div></div>
+      <b>셀카를 올려주세요</b>
+      <span>탭해서 사진 선택 · 갤러리 또는 카메라</span>
+    </div>
+  </div>
+  <input type="file" id="fileInput" accept="image/*" multiple hidden>
+
+  <div class="action-row hidden" id="actionRow">
+    <button class="magic-cta hidden" id="magicBtn">💖 내 스타일 보정</button>
+    <button class="action-btn" id="cropBtn">✂ 자르기 · 회전</button>
+  </div>
+
+  <div class="tabs">
+    <button class="tab on" id="tabColor">✨ 컬러 · 피부</button>
+    <button class="tab" id="tabContour">📐 윤곽 성형</button>
+  </div>
+
+  <!-- ═══ COLOR TAB ═══ -->
+  <div id="colorPane">
+    <div class="section-label">조명 프리셋 · Presets</div>
+    <div class="presets" id="presets"></div>
+    <div class="section-label">디테일 보정 · Fine Tune</div>
+    <div class="sliders" id="sliders"></div>
+  </div>
+
+  <!-- ═══ CONTOUR TAB ═══ -->
+  <div id="contourPane" class="hidden">
+    <div class="section-label" style="margin-top:18px">모드 선택</div>
+    <div class="seg">
+      <button id="modeAuto" class="on">🤖 자동 (AI 얼굴 인식)</button>
+      <button id="modeManual">✋ 수동 (직접 보정)</button>
+    </div>
+
+    <!-- auto -->
+    <div class="panel" id="autoPanel">
+      <div class="face-status"><span class="dot" id="faceDot"></span><span id="faceStatusText">프리셋을 선택하면 얼굴을 인식해요</span></div>
+      <div class="presets" id="autoPresets" style="padding-bottom:2px"></div>
+      <div class="srow" style="margin-top:14px;margin-bottom:4px">
+        <div class="top"><label>자동 보정 강도</label><span class="val" id="intensityVal">100</span></div>
+        <div class="ss" id="intensitySS"><div class="ss-track"><div class="ss-fill"></div><div class="ss-thumb"></div></div></div>
+      </div>
+    </div>
+
+    <!-- manual -->
+    <div class="panel hidden" id="manualPanel">
+      <div class="brushes">
+        <button class="brush on" data-brush="push">↘ 밀기<small>턱선 드래그</small></button>
+        <button class="brush" data-brush="shrink">◉ 축소<small>탭 한 번</small></button>
+        <button class="brush" data-brush="grow">⊕ 확대<small>눈 키우기</small></button>
+        <button class="brush" data-brush="heal">🩹 잡티<small>점·트러블 탭</small></button>
+      </div>
+      <div class="srow">
+        <div class="top"><label>브러시 크기</label><span class="val" id="brushSizeVal">90</span></div>
+        <div class="ss" id="brushSizeSS"><div class="ss-track"><div class="ss-fill"></div><div class="ss-thumb"></div></div></div>
+      </div>
+      <div class="srow" style="margin-bottom:6px">
+        <div class="top"><label>강도</label><span class="val" id="brushStrVal">50</span></div>
+        <div class="ss" id="brushStrSS"><div class="ss-track"><div class="ss-fill"></div><div class="ss-thumb"></div></div></div>
+      </div>
+      <div class="row-btns">
+        <button class="mini-btn" id="undoBtn">↩ 되돌리기</button>
+        <button class="mini-btn" id="clearManualBtn">수동 전체 취소</button>
+      </div>
+      <div class="hint"><b>밀기:</b> 턱 바깥쪽에서 안쪽으로 드래그하면 갸름해져요 · <b>축소/확대:</b> 원하는 곳을 탭하면 그 부분이 줄거나 커져요 · <b>잡티:</b> 점이나 트러블을 탭하면 주변 피부로 자연스럽게 지워져요</div>
+    </div>
+  </div>
+</div>
+
+<div class="modal hidden" id="trainModal">
+  <div class="modal-card">
+    <div class="modal-head"><b>⚙️ 학습 모드 · Training</b><button id="trainClose">✕</button></div>
+    <p class="hint" style="margin-top:0">같은 사진의 <b>원본</b>과 <b>보정본</b>(SNOW·소다 등으로 보정한 결과)을 올리면 차이를 분석해서 <b>💖 나의 프리셋</b>을 만들어요. 여러 쌍을 추가할수록 정확해져요. 사진은 폰 밖으로 전송되지 않아요.<br>💡 색감·피부·윤곽 값만 배워요 — 잡티 제거나 부분 보정 같은 건 학습으로 재현되지 않아요.</p>
+    <div class="calib-slots">
+      <div class="calib-slot" id="slotBefore"><span>📷<br>원본<br>(Before)</span></div>
+      <div class="calib-slot" id="slotAfter"><span>✨<br>보정본<br>(After)</span></div>
+    </div>
+    <button class="btn btn-save" id="analyzeBtn" disabled style="width:100%;margin-top:14px">분석하기</button>
+    <div class="hint hidden" id="calibResult" style="margin-top:12px"></div>
+    <button class="mini-btn hidden" id="addProfileBtn" style="width:100%;margin-top:10px;border-color:var(--rose);color:var(--rose)">💖 프로필에 추가</button>
+    <div class="hint" id="profileStatus" style="margin-top:16px"></div>
+    <div class="hint" id="syncStatus" style="margin-top:14px"></div>
+    <div class="row-btns" style="margin-top:8px">
+      <button class="mini-btn" id="syncSetupBtn">☁️ 동기화 설정</button>
+      <button class="mini-btn" id="syncNowBtn">지금 동기화</button>
+    </div>
+    <div class="row-btns" style="margin-top:10px">
+      <button class="mini-btn" id="exportProfileBtn">프로필 백업 (복사)</button>
+      <button class="mini-btn" id="importProfileBtn">백업 불러오기</button>
+    </div>
+    <button class="mini-btn" id="undoLearnBtn" style="width:100%;margin-top:10px">↩ 최근 학습 취소</button>
+    <button class="mini-btn" id="resetProfileBtn" style="width:100%;margin-top:10px">학습 프로필 초기화</button>
+  </div>
+</div>
+<input type="file" id="calibInput" accept="image/*" hidden>
+
+<div class="modal hidden" id="cropModal">
+  <div class="modal-card">
+    <div class="modal-head"><b>✂ 자르기 · 회전</b><button id="cropClose">✕</button></div>
+    <div class="crop-stage"><canvas id="cropCanvas"></canvas></div>
+    <div class="crop-aspects" id="cropAspects"></div>
+    <div class="srow" style="margin-top:14px;margin-bottom:4px">
+      <div class="top"><label>수평 보정</label><span class="val" id="cropAngleVal">0°</span></div>
+      <div class="ss" id="cropAngleSS"><div class="ss-track"><div class="ss-fill"></div><div class="ss-thumb"></div></div></div>
+    </div>
+    <div class="row-btns">
+      <button class="mini-btn" id="rotate90Btn">⟳ 90° 회전</button>
+      <button class="mini-btn" id="cropResetBtn">초기화</button>
+    </div>
+    <button class="btn btn-save" id="cropApplyBtn" style="width:100%;margin-top:12px">적용하기</button>
+  </div>
+</div>
+
+<div class="modal hidden" id="batchModal">
+  <div class="modal-card">
+    <div class="modal-head"><b>📦 일괄 보정</b><button id="batchClose">✕</button></div>
+    <p class="hint" style="margin-top:0" id="batchInfo"></p>
+    <div class="batch-grid" id="batchGrid"></div>
+    <button class="btn btn-save" id="batchRunBtn" style="width:100%;margin-top:14px">전체 보정하고 저장</button>
+  </div>
+</div>
+
+<div class="modal hidden" id="qualityModal">
+  <div class="modal-card">
+    <div class="modal-head"><b>저장 품질</b><button id="qualityClose">✕</button></div>
+    <button class="btn btn-save" id="qStandard" style="width:100%">고화질 (권장 · 2200px)</button>
+    <button class="btn btn-ghost" id="qOriginal" style="width:100%;margin-top:10px">최대 화질 (3000px)</button>
+    <p class="hint">최대 화질은 기기에 따라 메모리가 부족할 수 있어요 — 실패하면 자동으로 고화질로 다시 저장돼요.</p>
+  </div>
+</div>
+
+<div class="learn-bar hidden" id="learnBar">
+  <span>이 보정 스타일을 학습할까요?</span>
+  <button id="learnYes">💖 학습</button>
+  <button id="learnNo">안 함</button>
+</div>
+
+<div class="bar">
+  <div class="bar-inner">
+    <button class="btn btn-ghost" id="changeBtn" disabled>사진 변경</button>
+    <button class="btn btn-save" id="saveBtn" disabled>고화질로 저장하기 ✦</button>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+(function(){
+"use strict";
+
+/* offline support — caches the app and the AI model after first load */
+if('serviceWorker' in navigator){
+  window.addEventListener('load',()=>{
+    navigator.serviceWorker.register('./sw.js').catch(()=>{});
+  });
+}
+/* ask the browser to protect her training data from auto-eviction */
+if(navigator.storage && navigator.storage.persist){
+  navigator.storage.persist().catch(()=>{});
+}
+
+/* ═══════════ state ═══════════ */
+const DEFAULTS = { smooth:0, glow:0, teeth:0, expo:0, highlights:0, shadows:0, whites:0, blacks:0, bright:0, contrast:0, warmth:0, tint:0, pink:0, vibrance:0, sat:0, sharp:0, fade:0, grain:0, vig:0 };
+let params = {...DEFAULTS};
+let fullImg = null;
+let previewData = null;       // original preview ImageData (never mutated)
+let warpCache = null;         // previewData after warps
+let previewBlur = null;       // blur of warpCache
+let activePreset = 'none';
+let renderQueued = false;
+
+let manualOps = [];           // user liquify ops (normalized)
+let autoOps = [];             // generated from landmarks
+let autoPresetId = 'none';
+let autoIntensity = 100;
+let landmarks = null;         // cached per photo
+let faceMeshInst = null;
+let detecting = false;
+
+let curTab = 'color';         // 'color' | 'contour'
+let contourMode = 'auto';     // 'auto' | 'manual'
+let brushType = 'push';
+let brushSize = 90, brushStr = 50;
+
+let lastRegions = null;       // contour intensities used for current autoOps
+
+/* ═══════════ personal profile (learning) ═══════════ */
+const PKEY='idolstudio_profile_v1';
+let profile=loadProfile();
+function loadProfile(){
+  try{
+    const p=JSON.parse(localStorage.getItem(PKEY));
+    if(p && p.v>=1 && p.v<=4){
+      if(!p.samples) p.samples=[];
+      /* v1→v2: pad old 7-feature samples with neutral face features, retrain */
+      p.samples.forEach(s=>{
+        while(s.f.length<9) s.f.push(s.f.length===7?0.45:1.05);
+        if(s.t && s.t.length===13){ s.t.splice(5,0,0); }   /* v1: +색조 */
+        /* v2→v3: targets grew to 20 (added 라이트룸 톤 + vibrance).
+           Old samples lack those dimensions; retire their targets to
+           neutral by rebuilding length, preserving region values at tail. */
+        if(s.t && s.t.length===14){
+          const regions=s.t.slice(11);                     // jaw,eyes,nose
+          const nt=new Array(17).fill(0);
+          /* keep old color values that still exist at same names */
+          const oldKeys=['smooth','glow','bright','contrast','warmth','tint','pink','sat','sharp','fade','vig'];
+          oldKeys.forEach((k,i)=>{ const ni=TKEYS.indexOf(k); if(ni>=0) nt[ni]=s.t[i]; });
+          s.t=nt.concat(regions);
+        }
+        /* v3→v4: two new contour regions (광대, 얼굴 축소) at the tail */
+        if(s.t && s.t.length===20){ s.t.push(0,0); }
+      });
+      if(!p.regionSum) p.regionSum={jaw:0,eyes:0,nose:0};
+      if(!('cheek' in p.regionSum)){ p.regionSum.cheek=0; p.regionSum.face=0; }
+      if(p.v<4) p.ml=null;         /* output dims changed — rebuilt from samples on load */
+      if(!('ml' in p)) p.ml=null;
+      p.v=4;
+      return p;
+    }
+  }catch(_){}
+  return {v:4,colorSum:{},colorN:0,regionSum:{jaw:0,eyes:0,nose:0,cheek:0,face:0},regionN:0,pairs:0,samples:[],ml:null};
+}
+function saveProfile(){
+  profile.updatedAt=Date.now();
+  try{ localStorage.setItem(PKEY,JSON.stringify(profile)); }
+  catch(_){ showToast('이 브라우저에선 프로필 저장이 안돼요'); }
+  cloudPush();
+}
+
+/* ═══════════ cloud sync (Google Apps Script backend) ═══════════ */
+const SYNC_KEY='idolstudio_sync_url';
+let syncUrl=null;
+try{ syncUrl=localStorage.getItem(SYNC_KEY)||null; }catch(_){}
+let pushTimer=null;
+function cloudPush(){
+  if(!syncUrl) return;
+  clearTimeout(pushTimer);
+  pushTimer=setTimeout(()=>{
+    fetch(syncUrl,{method:'POST',body:JSON.stringify(profile)}).catch(()=>{});
+  },2000);
+}
+async function cloudPull(showResult){
+  if(!syncUrl){ if(showResult) showToast('먼저 ☁️ 동기화 설정을 해주세요'); return; }
+  try{
+    const res=await fetch(syncUrl);
+    const txt=(await res.text()).trim();
+    if(!txt || txt==='denied'){
+      if(txt==='denied'){ if(showResult) showToast('비밀키가 틀려요 — URL을 확인해주세요'); return; }
+      cloudPush();
+      if(showResult) showToast('클라우드가 비어 있어서 현재 프로필을 올렸어요');
+      return;
+    }
+    const remote=JSON.parse(txt);
+    if(remote && (remote.v>=1&&remote.v<=4)){
+      if((remote.updatedAt||0)>(profile.updatedAt||0)){
+        localStorage.setItem(PKEY,txt);
+        profile=loadProfile();
+        refreshPersonalChips();
+        if(showResult){ renderProfileStatus(); showToast('☁️ 클라우드 프로필을 불러왔어요'); }
+      }else{
+        cloudPush();
+        if(showResult) showToast('☁️ 동기화 완료 — 이 기기가 최신이에요');
+      }
+    }
+  }catch(_){ if(showResult) showToast('동기화 실패 — 인터넷과 URL을 확인해주세요'); }
+}
+function avgColor(){
+  const o={}; if(!profile.colorN) return o;
+  for(const k in profile.colorSum) o[k]=Math.round(profile.colorSum[k]/profile.colorN);
+  return o;
+}
+function avgRegions(){
+  const n=profile.regionN||1;
+  return {jaw:profile.regionSum.jaw/n, eyes:profile.regionSum.eyes/n, nose:profile.regionSum.nose/n,
+          cheek:(profile.regionSum.cheek||0)/n, face:(profile.regionSum.face||0)/n};
+}
+function addColorSample(cs){
+  for(const k in cs) profile.colorSum[k]=(profile.colorSum[k]||0)+(cs[k]||0);
+  profile.colorN++;
+}
+function addRegionSample(r){
+  profile.regionSum.jaw+=r.jaw||0; profile.regionSum.eyes+=r.eyes||0; profile.regionSum.nose+=r.nose||0;
+  profile.regionSum.cheek=(profile.regionSum.cheek||0)+(r.cheek||0);
+  profile.regionSum.face=(profile.regionSum.face||0)+(r.face||0);
+  profile.regionN++;
+}
+function hasProfile(){ return profile.colorN>0 || profile.regionN>0; }
+
+/* ═══════════ tiny on-device neural net (9→20→22 MLP) ═══════════
+   Learns "for THIS kind of photo, she likes THESE settings".
+   Inputs: photo statistics. Outputs: 17 color params + 5 contour strengths.
+   ~600 weights, trains in milliseconds, stored in localStorage.
+*/
+const ML_IN=9, ML_H=20, ML_OUT=22;
+const TKEYS=['smooth','glow','expo','highlights','shadows','whites','blacks','bright','contrast','warmth','tint','vibrance','pink','sat','sharp','fade','vig'];
+const TSCALE={smooth:100,glow:100,expo:50,highlights:100,shadows:100,whites:100,blacks:100,bright:50,contrast:50,warmth:50,tint:50,vibrance:100,pink:100,sat:100,sharp:100,fade:50,vig:50};
+
+function mlInit(){
+  const r=n=>Array.from({length:n},()=>(Math.random()*2-1)*0.3);
+  const z=n=>Array.from({length:n},()=>0);
+  return {w1:r(ML_IN*ML_H),b1:z(ML_H),w2:r(ML_H*ML_OUT),b2:z(ML_OUT)};
+}
+function mlForward(m,x,cache){
+  const h=new Array(ML_H);
+  for(let j=0;j<ML_H;j++){
+    let s=m.b1[j];
+    for(let i=0;i<ML_IN;i++) s+=m.w1[i*ML_H+j]*x[i];
+    h[j]=Math.tanh(s);
+  }
+  const y=new Array(ML_OUT);
+  for(let k=0;k<ML_OUT;k++){
+    let s=m.b2[k];
+    for(let j=0;j<ML_H;j++) s+=m.w2[j*ML_OUT+k]*h[j];
+    y[k]=s;
+  }
+  if(cache) cache.h=h;
+  return y;
+}
+function mlTrain(m,samples,epochs,lr){
+  for(let e=0;e<epochs;e++){
+    for(const s of samples){
+      const cache={};
+      const y=mlForward(m,s.f,cache);
+      const dy=new Array(ML_OUT);
+      for(let k=0;k<ML_OUT;k++) dy[k]=(y[k]-s.t[k])*2/ML_OUT;
+      const dh=new Array(ML_H).fill(0);
+      for(let j=0;j<ML_H;j++){
+        for(let k=0;k<ML_OUT;k++){
+          dh[j]+=dy[k]*m.w2[j*ML_OUT+k];
+          m.w2[j*ML_OUT+k]-=lr*dy[k]*cache.h[j];
+        }
+      }
+      for(let k=0;k<ML_OUT;k++) m.b2[k]-=lr*dy[k];
+      for(let j=0;j<ML_H;j++){
+        const dz=dh[j]*(1-cache.h[j]*cache.h[j]);
+        for(let i=0;i<ML_IN;i++) m.w1[i*ML_H+j]-=lr*dz*s.f[i];
+        m.b1[j]-=lr*dz;
+      }
+    }
+  }
+}
+function makeTargets(colorObj,regions){
+  const t=[];
+  TKEYS.forEach(k=>t.push((colorObj[k]||0)/TSCALE[k]));
+  t.push((regions.jaw||0)/150,(regions.eyes||0)/150,(regions.nose||0)/150,
+         (regions.cheek||0)/150,(regions.face||0)/150);
+  return t;
+}
+const RBASE=TKEYS.length;
+function predToColorRegions(y){
+  const clampV=(v,a,b)=>Math.max(a,Math.min(b,v));
+  const color={};
+  TKEYS.forEach((k,i)=>{
+    const def=SLIDER_DEFS.find(d=>d.key===k);
+    color[k]=Math.round(clampV(y[i]*TSCALE[k],def.min,def.max));
+  });
+  const regions={
+    jaw:clampV(y[RBASE]*150,0,150),
+    eyes:clampV(y[RBASE+1]*150,0,150),
+    nose:clampV(y[RBASE+2]*150,0,150),
+    cheek:clampV(y[RBASE+3]*150,0,150),
+    face:clampV(y[RBASE+4]*150,0,150)
+  };
+  return {color,regions};
+}
+function featsFromStats(s){
+  const c=v=>Math.max(-2,Math.min(2,v));
+  return [c(s.mean/255), c(s.std/80), c(s.rb/60), c(s.chroma/60), c(s.hf/12), s.shadowFrac, s.highFrac];
+}
+let photoFeats=null;
+let previewMask=null, teethDetectTried=false, previewOut=null;
+/* inner-lip landmark loop (MediaPipe FaceMesh) — the visible-teeth region */
+const LIPS_INNER=[78,95,88,178,87,14,317,402,318,324,308,415,310,311,312,13,82,81,80,191];
+function mouthMaskFor(lm,w,h){
+  if(!lm) return null;
+  const mw=Math.max(1,Math.ceil(w/4)), mh=Math.max(1,Math.ceil(h/4));
+  const c=document.createElement('canvas'); c.width=mw; c.height=mh;
+  const ctx=c.getContext('2d');
+  ctx.fillStyle='#fff'; ctx.strokeStyle='#fff';
+  ctx.lineWidth=Math.max(2,mw*0.008); ctx.lineJoin='round';
+  ctx.beginPath();
+  LIPS_INNER.forEach((i,n)=>{ const x=lm[i].x*mw, y=lm[i].y*mh; n?ctx.lineTo(x,y):ctx.moveTo(x,y); });
+  ctx.closePath(); ctx.fill(); ctx.stroke();
+  const img=ctx.getImageData(0,0,mw,mh);
+  const bl=boxBlurRGB(img.data,mw,mh,1);            // soft feathered edge
+  const data=new Uint8ClampedArray(mw*mh);
+  for(let i=0;i<mw*mh;i++) data[i]=bl[i*4];
+  return {data,mw,mh};
+}
+function maybeDetectForTeeth(){
+  if(landmarks||!fullImg||teethDetectTried||detecting) return;
+  teethDetectTried=true;
+  detecting=true;
+  detectFace().then(lm=>{
+    landmarks=lm; setFaceStatus('ok');
+    previewMask=null; scheduleRender();
+  }).catch(()=>{ showToast('얼굴을 인식하지 못해 치아 미백을 적용할 수 없어요'); })
+    .finally(()=>{ detecting=false; });
+}
+function faceFeats(lm,w,h){
+  if(!lm) return [0.45,1.05];               // neutral defaults when face unknown
+  const ar=w/h;
+  const A=i=>({x:lm[i].x*ar,y:lm[i].y});
+  const d=(a,b)=>Math.hypot(a.x-b.x,a.y-b.y);
+  const fw=d(A(234),A(454)), fh=d(A(10),A(152))||1e-6;
+  return [Math.min(2,fw/ar), Math.min(2,fw/fh)]; // face size in frame, face roundness
+}
+function currentFeats(){
+  if(!previewData) return null;
+  if(!photoFeats){
+    const c=document.createElement('canvas');
+    c.width=previewData.width; c.height=previewData.height;
+    c.getContext('2d').putImageData(previewData,0,0);
+    const [w,h]=fitSize(previewData.width,previewData.height,320);
+    photoFeats=featsFromStats(rawStats(c,w,h));
+  }
+  return photoFeats.concat(faceFeats(landmarks,previewData.width,previewData.height));
+}
+/* translate her manual liquify strokes into face-region learning:
+   a push near the jawline ≈ extra jaw slimming, a bulge near the eyes
+   ≈ eye enlargement, a push near the nose ≈ nose slimming */
+function manualRegionContrib(lm,w,h,ops){
+  const ar=w/h;
+  const A=i=>({x:lm[i].x*ar,y:lm[i].y});
+  const d=(a,b)=>Math.hypot(a.x-b.x,a.y-b.y);
+  const faceW=d(A(234),A(454))||1e-6;
+  const jawPts=[136,365,150,379,172,397,149,378].map(A);
+  const cheekPts=[116,345,123,352].map(A);
+  const rc=lm[468]?{x:lm[468].x*ar,y:lm[468].y}:A(159);
+  const lc=lm[473]?{x:lm[473].x*ar,y:lm[473].y}:A(386);
+  const nose={x:lm[1].x*ar,y:lm[1].y};
+  const out={jaw:0,eyes:0,nose:0,cheek:0,face:0};
+  for(const op of ops){
+    const p={x:op.cx*ar,y:op.cy};
+    if(op.type==='push'){
+      const mag=Math.hypot((op.dx||0)*ar,(op.dy||0));
+      if(d(p,nose)<faceW*0.16) out.nose+=mag/(faceW*0.018)*100;
+      else if(cheekPts.some(q=>d(p,q)<faceW*0.18)) out.cheek+=mag/(faceW*0.020)*100*0.5;
+      else if(jawPts.some(q=>d(p,q)<faceW*0.22)) out.jaw+=mag/(faceW*0.026)*100*0.5;
+    }else if(op.s>0){
+      if(d(p,rc)<faceW*0.2 || d(p,lc)<faceW*0.2) out.eyes+=op.s/0.12*100*0.5;
+    }
+  }
+  out.jaw=Math.min(150,out.jaw); out.eyes=Math.min(150,out.eyes); out.nose=Math.min(150,out.nose);
+  out.cheek=Math.min(150,out.cheek);
+  return out;
+}
+function mlBlendWeight(){
+  const n=profile.samples.length;
+  return Math.max(0,Math.min(1,(n-30)/40));
+}
+function personalColor(f){
+  const avg=avgColor();
+  const w=mlBlendWeight(); f=f||currentFeats();
+  if(w<=0||!profile.ml||!f) return avg;
+  const pred=predToColorRegions(mlForward(profile.ml,f)).color;
+  const out={};
+  TKEYS.forEach(k=>out[k]=Math.round((pred[k]||0)*w+(avg[k]||0)*(1-w)));
+  out.teeth=Math.round(avg.teeth||0);   // teeth/grain learned by average only (not in ML targets)
+  out.grain=Math.round(avg.grain||0);
+  return out;
+}
+function personalRegions(f){
+  const avg=avgRegions();
+  const w=mlBlendWeight(); f=f||currentFeats();
+  if(w<=0||!profile.ml||!f) return avg;
+  const pr=predToColorRegions(mlForward(profile.ml,f)).regions;
+  return {
+    jaw:pr.jaw*w+avg.jaw*(1-w),
+    eyes:pr.eyes*w+avg.eyes*(1-w),
+    nose:pr.nose*w+avg.nose*(1-w),
+    cheek:pr.cheek*w+(avg.cheek||0)*(1-w),
+    face:pr.face*w+(avg.face||0)*(1-w)
+  };
+}
+function addTrainingSample(f,colorObj,regions){
+  if(!f) return;
+  profile.samples.push({f,t:makeTargets(colorObj,regions||{})});
+  if(profile.samples.length>200) profile.samples.shift();
+  scheduleTrain();
+}
+let trainTimer=null;
+function scheduleTrain(){
+  clearTimeout(trainTimer);
+  trainTimer=setTimeout(()=>{
+    if(profile.samples.length>=5){
+      if(!profile.ml) profile.ml=mlInit();
+      mlTrain(profile.ml,profile.samples,200,0.03);
+    }
+    saveProfile();
+  },100);
+}
+
+const PREVIEW_MAX = 1000;
+const EXPORT_MAX = 2200;
+
+/* ═══════════ presets ═══════════ */
+const PRESETS = [
+  { id:'none',    name:'원본',       sub:'No filter',    gel:'linear-gradient(90deg,#555,#888)', p:{} },
+  { id:'personal',name:'💖 나의 프리셋', sub:'학습된 보정',   gel:'linear-gradient(90deg,#ff8fb8,#ffd98a)', p:{} },
+
+  /* 앨범 커버 — clean studio high-key: bright skin, protected speculars, no vignette */
+  { id:'album',   name:'앨범 커버',   sub:'Studio clean', gel:'linear-gradient(90deg,#f5f5f5,#ffd6e6)',
+    p:{smooth:34,glow:12,expo:4,highlights:-22,shadows:18,whites:14,blacks:-12,contrast:8,warmth:-4,tint:-2,vibrance:14,sat:-6,pink:4,sharp:26,fade:6,vig:0} },
+
+  /* 윈도우 라이트 — soft warm window light: lifted shadows, soft highlights, warm */
+  { id:'window',  name:'윈도우 라이트', sub:'창가 자연광',   gel:'linear-gradient(90deg,#fff3d6,#ffd98a)',
+    p:{smooth:32,glow:24,expo:6,highlights:-30,shadows:34,whites:8,blacks:-4,contrast:-4,warmth:18,tint:-4,vibrance:16,pink:8,sharp:10,fade:16,vig:8} },
+
+  /* 골든아워 — sunset outdoor: warm but skin-safe (global warmth capped), pink recovers */
+  { id:'golden',  name:'골든아워',    sub:'노을빛 야외',    gel:'linear-gradient(90deg,#ffb347,#ff6f61)',
+    p:{smooth:26,glow:26,expo:2,highlights:-16,shadows:24,whites:10,blacks:-6,contrast:6,warmth:22,tint:4,vibrance:22,sat:6,pink:14,sharp:12,fade:12,vig:16} },
+
+  /* 야외 자연광 — bright clean daylight: balanced, true-to-life, crisp */
+  { id:'daylight',name:'야외 자연광',  sub:'맑은 날 데일리', gel:'linear-gradient(90deg,#bfe3ff,#fdfdfd)',
+    p:{smooth:22,glow:8,expo:8,highlights:-18,shadows:20,whites:12,blacks:-8,contrast:8,warmth:2,tint:-2,vibrance:18,sat:2,pink:2,sharp:18,fade:4,vig:4} },
+
+  /* 시크 무드 — cold editorial chic: pulled highlights, deep blacks, low sat, cool */
+  { id:'chic',    name:'시크 무드',   sub:'Cold chic',    gel:'linear-gradient(90deg,#8fa8ff,#3d4b78)',
+    p:{smooth:38,glow:8,expo:-2,highlights:-26,shadows:10,whites:-6,blacks:-18,contrast:16,warmth:-22,tint:6,vibrance:-6,sat:-16,pink:0,sharp:18,fade:8,vig:18} },
+
+  /* MV 감성 — cinematic teal-orange feel; tint kept subtle so skin never greens */
+  { id:'mv',      name:'MV 감성',    sub:'Cinematic',    gel:'linear-gradient(90deg,#16e0c0,#ff9a62)',
+    p:{smooth:30,glow:24,expo:0,highlights:-20,shadows:28,whites:6,blacks:-14,contrast:14,warmth:14,tint:-4,vibrance:20,sat:8,pink:6,sharp:14,fade:14,vig:18} },
+
+  /* 잡지 화보 — editorial: high micro-contrast, crisp, punchy but controlled */
+  { id:'hwabo',   name:'잡지 화보',   sub:'Editorial',    gel:'linear-gradient(90deg,#f5f5f5,#b9a6ff)',
+    p:{smooth:34,glow:8,expo:2,highlights:-30,shadows:24,whites:16,blacks:-22,contrast:22,warmth:0,tint:0,vibrance:18,sat:6,pink:4,sharp:36,fade:6,vig:16} },
+
+  /* 플래시 — Y2K direct-flash jacket: blooming (unrecovered) highlights, cool, hard falloff */
+  { id:'flash',   name:'플래시',     sub:'Y2K 자켓',      gel:'linear-gradient(90deg,#ffffff,#b8c6ff)',
+    p:{smooth:28,glow:10,expo:10,highlights:18,shadows:6,whites:18,blacks:-10,contrast:12,warmth:-8,tint:2,vibrance:10,pink:6,sharp:22,fade:0,vig:26} },
+
+  /* 파스텔 드림 — dreamy pastel concept: matte lift, desat, pink shift, low contrast */
+  { id:'pastel',  name:'파스텔 드림',  sub:'Dreamy pastel', gel:'linear-gradient(90deg,#ffd6e6,#cfe4ff)',
+    p:{smooth:36,glow:16,expo:6,highlights:-18,shadows:26,whites:6,blacks:6,contrast:-10,warmth:-6,tint:6,vibrance:-8,sat:-18,pink:16,sharp:8,fade:26,vig:0} },
+
+  /* 필름 무드 — Portra-style film: warm mids, muted vibrance, green-leaning shadows, grain */
+  { id:'film',    name:'필름 무드',   sub:'Portra 필름',   gel:'linear-gradient(90deg,#e8d9b0,#8fa07a)',
+    p:{smooth:18,glow:8,expo:2,highlights:-22,shadows:18,whites:-4,blacks:-8,contrast:8,warmth:12,tint:-5,vibrance:-10,sat:-4,pink:4,sharp:10,fade:18,vig:12,grain:22} },
+
+  /* 모노 화보 — B&W editorial: full desaturation, deep blacks, strong structure, grain */
+  { id:'mono',    name:'모노 화보',   sub:'흑백 B&W',      gel:'linear-gradient(90deg,#1a1a1a,#dddddd)',
+    p:{smooth:30,glow:10,expo:2,highlights:-24,shadows:22,whites:14,blacks:-24,contrast:30,warmth:0,tint:0,vibrance:0,sat:-100,pink:0,sharp:30,fade:10,vig:22,grain:14} },
+
+  /* 지브리 — anime grade (SNS 감성, 마지막 자리) */
+  { id:'ghibli',  name:'지브리',     sub:'애니 색감',      gel:'linear-gradient(90deg,#9fd6a0,#bfe3ff,#fff0c2)',
+    p:{smooth:14,glow:14,expo:-10,highlights:-40,shadows:65,whites:-8,blacks:-5,bright:5,contrast:-10,warmth:10,tint:-10,vibrance:50,sat:10,pink:2,sharp:18,fade:10,vig:4} },
+];
+
+const AUTO_PRESETS = [
+  { id:'none',  name:'끄기',        sub:'Off',            gel:'linear-gradient(90deg,#555,#888)' },
+  { id:'personal',name:'💖 나의 윤곽', sub:'학습된 윤곽',      gel:'linear-gradient(90deg,#ff8fb8,#b9a6ff)' },
+  { id:'vline', name:'브이라인',     sub:'턱선 슬림',        gel:'linear-gradient(90deg,#ff8fb8,#f25d97)' },
+  { id:'cheek', name:'광대 축소',    sub:'옆광대 슬림',      gel:'linear-gradient(90deg,#ffb6c9,#f78fb3)' },
+  { id:'eyes',  name:'눈 또렷',     sub:'눈 확대',          gel:'linear-gradient(90deg,#b9a6ff,#8fa8ff)' },
+  { id:'nose',  name:'코 슬림',     sub:'콧볼·콧대 슬림',    gel:'linear-gradient(90deg,#ffd98a,#ffb56b)' },
+  { id:'slim',  name:'얼굴 축소',    sub:'소두 효과',        gel:'linear-gradient(90deg,#c8b6ff,#9a86ff)' },
+  { id:'full',  name:'아이돌 풀패키지', sub:'V라인+광대+눈+코', gel:'linear-gradient(90deg,#ff8fb8,#ffd98a,#b9a6ff)' },
+];
+
+const SLIDER_GROUPS = [
+  { title:'🧴 피부', open:true, items:[
+    { key:'smooth',  label:'피부 보정',   min:0,   max:100 },
+    { key:'glow',    label:'물광 글로우', min:0,   max:100 },
+    { key:'teeth',   label:'치아 미백',   min:0,   max:100 },
+  ]},
+  { title:'☀️ 톤 (라이트룸 스타일)', open:true, items:[
+    { key:'expo',      label:'노출',       min:-50, max:50 },
+    { key:'highlights',label:'하이라이트', min:-100,max:100 },
+    { key:'shadows',   label:'그림자',     min:-100,max:100 },
+    { key:'whites',    label:'화이트',     min:-100,max:100 },
+    { key:'blacks',    label:'블랙',       min:-100,max:100 },
+    { key:'bright',    label:'밝기',       min:-50, max:50 },
+    { key:'contrast',  label:'대비',       min:-50, max:50 },
+  ]},
+  { title:'🎨 색감', open:true, items:[
+    { key:'warmth',   label:'색온도 (차갑게 ↔ 따뜻하게)', min:-50, max:50 },
+    { key:'tint',     label:'색조 (초록 ↔ 자주)', min:-50, max:50 },
+    { key:'vibrance', label:'생동감 (Vibrance)', min:-50, max:100 },
+    { key:'sat',      label:'채도',       min:-100,max:50 },
+    { key:'pink',     label:'핑크 톤업',   min:0,   max:100 },
+  ]},
+  { title:'🪄 마무리', open:false, items:[
+    { key:'sharp',  label:'선명도',     min:0,   max:100 },
+    { key:'fade',   label:'필름 페이드', min:0,   max:50  },
+    { key:'grain',  label:'필름 그레인', min:0,   max:100 },
+    { key:'vig',    label:'비네팅',     min:0,   max:50  },
+  ]},
+];
+const SLIDER_DEFS = SLIDER_GROUPS.flatMap(g=>g.items);
+
+/* ═══════════ dom ═══════════ */
+const $ = id => document.getElementById(id);
+const mainCanvas=$('mainCanvas'), origCanvas=$('origCanvas'), overlayCanvas=$('overlayCanvas'),
+      stage=$('stage'), empty=$('empty'), fileInput=$('fileInput'),
+      presetsEl=$('presets'), autoPresetsEl=$('autoPresets'),
+      slidersEl=$('sliders'), saveBtn=$('saveBtn'), changeBtn=$('changeBtn'),
+      resetBtn=$('resetBtn'), toast=$('toast'), busy=$('busy'), busyMsg=$('busyMsg'),
+      compareTag=$('compareTag'),
+      colorPane=$('colorPane'), contourPane=$('contourPane'),
+      tabColor=$('tabColor'), tabContour=$('tabContour'),
+      modeAuto=$('modeAuto'), modeManual=$('modeManual'),
+      autoPanel=$('autoPanel'), manualPanel=$('manualPanel'),
+      faceDot=$('faceDot'), faceStatusText=$('faceStatusText'),
+      intensityVal=$('intensityVal');
+
+/* ═══════════ tabs ═══════════ */
+tabColor.addEventListener('click',()=>setTab('color'));
+tabContour.addEventListener('click',()=>setTab('contour'));
+function setTab(t){
+  curTab=t;
+  tabColor.classList.toggle('on',t==='color');
+  tabContour.classList.toggle('on',t==='contour');
+  colorPane.classList.toggle('hidden',t!=='color');
+  contourPane.classList.toggle('hidden',t!=='contour');
+  updateHint();
+}
+modeAuto.addEventListener('click',()=>setContourMode('auto'));
+modeManual.addEventListener('click',()=>setContourMode('manual'));
+function setContourMode(m){
+  contourMode=m;
+  modeAuto.classList.toggle('on',m==='auto');
+  modeManual.classList.toggle('on',m==='manual');
+  autoPanel.classList.toggle('hidden',m!=='auto');
+  manualPanel.classList.toggle('hidden',m!=='manual');
+  updateHint();
+}
+function manualEditing(){ return curTab==='contour' && contourMode==='manual'; }
+function updateHint(){
+  stage.classList.toggle('editing', manualEditing());
+}
+
+/* ═══════════ color preset chips ═══════════ */
+PRESETS.forEach(pr=>{
+  const b=document.createElement('button');
+  b.className='chip'+(pr.id===activePreset?' on':'');
+  b.dataset.id=pr.id;
+  b.innerHTML=`<canvas class="thumb" width="76" height="100"></canvas><span class="gel" style="background:${pr.gel}"></span><b>${pr.name}</b><span>${pr.sub}</span>`;
+  b.addEventListener('click',()=>{
+    if(pr.id==='personal'){ applyPersonalAll(); return; }
+    activePreset=pr.id;
+    params={...DEFAULTS,...pr.p};
+    syncSliders(); markChips(); scheduleRender();
+  });
+  if(pr.id==='personal') b.classList.add('hidden');
+  presetsEl.appendChild(b);
+});
+function markChips(){
+  presetsEl.querySelectorAll('.chip').forEach(c=>c.classList.toggle('on',c.dataset.id===activePreset));
+}
+
+/* ═══════════ auto preset chips ═══════════ */
+AUTO_PRESETS.forEach(pr=>{
+  const b=document.createElement('button');
+  b.className='chip'+(pr.id===autoPresetId?' on':'');
+  b.dataset.id=pr.id;
+  b.innerHTML=`<span class="gel" style="background:${pr.gel}"></span><b>${pr.name}</b><span>${pr.sub}</span>`;
+  b.addEventListener('click',()=>applyAutoPreset(pr.id));
+  if(pr.id==='personal') b.classList.add('hidden');
+  autoPresetsEl.appendChild(b);
+});
+function markAutoChips(){
+  autoPresetsEl.querySelectorAll('.chip').forEach(c=>c.classList.toggle('on',c.dataset.id===autoPresetId));
+}
+function makeSSlider(elId,min,max,initial,onChange){
+  const el=$(elId);
+  const fill=el.querySelector('.ss-fill'), thumb=el.querySelector('.ss-thumb');
+  const st={val:initial};
+  const paint=()=>{const pct=((st.val-min)/(max-min))*100;fill.style.width=pct+'%';thumb.style.left=pct+'%';};
+  const setX=(x)=>{
+    const r=el.querySelector('.ss-track').getBoundingClientRect();
+    let t=(x-r.left)/r.width;t=t<0?0:t>1?1:t;
+    const v=Math.round(min+t*(max-min));
+    if(v!==st.val){st.val=v;paint();onChange(v);}
+  };
+  attachScrollSafeSlider(el,setX);
+  paint();
+  return {set:v=>{st.val=v;paint();},get:()=>st.val};
+}
+const intensityCtl=makeSSlider('intensitySS',0,150,100,v=>{
+  autoIntensity=v; intensityVal.textContent=v;
+  if(autoPresetId!=='none' && landmarks){
+    lastRegions=regionsForPreset(autoPresetId,autoIntensity);
+    autoOps=genAutoOps(landmarks,lastRegions,previewData.width,previewData.height);
+    invalidateWarp(); scheduleRender();
+  }
+});
+
+async function applyAutoPreset(id){
+  if(!fullImg){ showToast('먼저 사진을 올려주세요'); return; }
+  if(detecting) return;              /* one detection at a time — FaceMesh is shared */
+  autoPresetId=id; markAutoChips();
+  if(id==='none'){ autoOps=[]; invalidateWarp(); scheduleRender(); return; }
+  try{
+    if(!landmarks){
+      detecting=true;
+      setFaceStatus('detecting');
+      showBusy('AI가 얼굴을 인식하는 중…');
+      landmarks=await detectFace();
+      detecting=false;
+      hideBusy();
+      setFaceStatus('ok');
+    }
+    lastRegions=regionsForPreset(autoPresetId,autoIntensity);
+    autoOps=genAutoOps(landmarks,lastRegions,previewData.width,previewData.height);
+    invalidateWarp(); scheduleRender();
+  }catch(err){
+    detecting=false;
+    hideBusy();
+    autoPresetId='none'; autoOps=[]; markAutoChips();
+    setFaceStatus('fail');
+    if(err && err.message==='noface') showToast('얼굴을 찾지 못했어요 — 정면 셀카로 다시 시도해보세요');
+    else showToast('AI 모델을 불러올 수 없어요 — 수동 모드를 사용해주세요');
+  }
+}
+function setFaceStatus(s){
+  faceDot.className='dot'+(s==='ok'?' ok':s==='fail'?' fail':'');
+  faceStatusText.textContent =
+    s==='ok' ? '얼굴 인식 완료 ✓ 프리셋이 적용돼요' :
+    s==='fail' ? '얼굴 인식 실패 — 수동 모드를 써보세요' :
+    s==='detecting' ? '얼굴 인식 중…' :
+    '프리셋을 선택하면 얼굴을 인식해요';
+}
+
+/* ═══════════ face detection (MediaPipe FaceMesh via CDN) ═══════════ */
+function loadScript(src){
+  return new Promise((res,rej)=>{
+    const s=document.createElement('script');
+    s.src=src; s.onload=res; s.onerror=()=>rej(new Error('cdn'));
+    document.head.appendChild(s);
+    setTimeout(()=>rej(new Error('cdn-timeout')),20000);
+  });
+}
+/* AI model is vendored in ./mediapipe/ so the app has no CDN dependency;
+   jsdelivr stays as a fallback in case the local files are ever missing */
+let mpBase='./mediapipe/';
+async function ensureFaceMesh(){
+  if(!window.FaceMesh){
+    try{ await loadScript(mpBase+'face_mesh.js'); }
+    catch(_){
+      mpBase='https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/';
+      await loadScript(mpBase+'face_mesh.js');
+    }
+  }
+  if(!window.FaceMesh) throw new Error('cdn');
+  if(!faceMeshInst){
+    faceMeshInst=new window.FaceMesh({locateFile:f=>mpBase+f});
+    faceMeshInst.setOptions({maxNumFaces:1,refineLandmarks:true,minDetectionConfidence:0.5,minTrackingConfidence:0.5});
+  }
+}
+async function detectFace(){
+  await ensureFaceMesh();
+  const c=document.createElement('canvas');
+  c.width=previewData.width; c.height=previewData.height;
+  c.getContext('2d').putImageData(previewData,0,0);
+  return detectFaceOn(c);
+}
+async function detectFaceOn(c){
+  await ensureFaceMesh();
+  return await new Promise((res,rej)=>{
+    let done=false;
+    faceMeshInst.onResults(r=>{
+      if(done) return; done=true;
+      if(r.multiFaceLandmarks && r.multiFaceLandmarks.length) res(r.multiFaceLandmarks[0]);
+      else rej(new Error('noface'));
+    });
+    faceMeshInst.send({image:c}).catch(e=>{ if(!done){done=true;rej(e);} });
+    setTimeout(()=>{ if(!done){done=true;rej(new Error('detect-timeout'));} },25000);
+  });
+}
+
+/* ═══════════ auto op generation (the idol face recipe) ═══════════
+   Works in aspect-corrected space and pushes perpendicular to the
+   face's own vertical axis (forehead→chin), so tilted heads warp
+   correctly and nothing smears upward.
+*/
+function regionsForPreset(id,intensity){
+  if(id==='personal'){
+    const a=personalRegions(), k=intensity/100;
+    return {jaw:a.jaw*k, eyes:a.eyes*k, nose:a.nose*k, cheek:(a.cheek||0)*k, face:(a.face||0)*k};
+  }
+  const r={jaw:0,eyes:0,nose:0,cheek:0,face:0};
+  if(id==='full'){
+    /* pro proportions — eyes read uncanny far sooner than jaw */
+    r.jaw=intensity; r.cheek=intensity*0.9; r.nose=intensity*0.8; r.eyes=intensity*0.55;
+    return r;
+  }
+  if(id==='vline') r.jaw=intensity;
+  if(id==='cheek') r.cheek=intensity;
+  if(id==='eyes')  r.eyes=intensity;
+  if(id==='nose')  r.nose=intensity;
+  if(id==='slim')  r.face=intensity;
+  return r;
+}
+function genAutoOps(lm,regions,w,h){
+  const jawI=(regions.jaw||0)/100, eyeI=(regions.eyes||0)/100, noseI=(regions.nose||0)/100;
+  const cheekI=(regions.cheek||0)/100, faceI=(regions.face||0)/100;
+  if(jawI<=0&&eyeI<=0&&noseI<=0&&cheekI<=0&&faceI<=0) return [];
+  const ar=w/h;
+  const A=i=>({x:lm[i].x*ar,y:lm[i].y});             // aspect-corrected coords
+  const avgA=idx=>{let x=0,y=0;idx.forEach(i=>{x+=lm[i].x*ar;y+=lm[i].y;});return{x:x/idx.length,y:y/idx.length};};
+  const d=(a,b)=>Math.hypot(a.x-b.x,a.y-b.y);
+  const rScale=h/Math.min(w,h);                       // aspect units → min-dim fraction
+  const top=A(10), chin=A(152);
+  let axx=chin.x-top.x, axy=chin.y-top.y;
+  const al=Math.hypot(axx,axy)||1; axx/=al; axy/=al;  // face "down" unit vector
+  const prx=-axy, pry=axx;                            // face "right" (perpendicular)
+  const faceW=d(A(234),A(454));
+  const ops=[];
+  const pushOp=(pt,dxA,dyA,rA)=>{
+    ops.push({type:'push',cx:pt.x/ar,cy:pt.y,r:rA*rScale,dx:dxA/ar,dy:dyA});
+  };
+  const toMidline=(i,mag,rA)=>{
+    const p=A(i);
+    const s=(p.x-top.x)*prx+(p.y-top.y)*pry;          // signed distance from midline
+    const dir=s>0?-1:1;
+    pushOp(p,dir*prx*mag,dir*pry*mag,rA);
+  };
+  if(jawI>0){
+    /* many small inward pinches along the jaw chain, strongest at the
+       jaw corner, tapering toward ear and chin — a smooth V, no smear */
+    const base=faceW*0.026*jawI, r=faceW*0.26;
+    [[132,.45],[361,.45],[172,.85],[397,.85],[136,1],[365,1],
+     [150,.9],[379,.9],[149,.65],[378,.65],[176,.4],[400,.4]]
+      .forEach(([i,k])=>toMidline(i,base*k,r));
+  }
+  if(eyeI>0){
+    const eyeW=d(A(33),A(133));
+    const r=Math.max(eyeW*1.25,faceW*0.13);
+    const s=0.12*eyeI;
+    const rc=lm[468]?{x:lm[468].x*ar,y:lm[468].y}:avgA([33,133,159,145]);
+    const lc=lm[473]?{x:lm[473].x*ar,y:lm[473].y}:avgA([362,263,386,374]);
+    [rc,lc].forEach(c=>ops.push({type:'bulge',cx:c.x/ar,cy:c.y,r:r*rScale,s:s}));
+  }
+  if(cheekI>0){
+    /* 광대 축소 — inward pinches along the zygomatic arch, strongest mid-cheekbone */
+    const base=faceW*0.020*cheekI, r=faceW*0.22;
+    [[116,1],[345,1],[123,.85],[352,.85],[93,.6],[323,.6]]
+      .forEach(([i,k])=>toMidline(i,base*k,r));
+  }
+  if(noseI>0){
+    const base=faceW*0.018*noseI;
+    /* 콧볼 (alar wings) */
+    [64,294].forEach(i=>toMidline(i,base,faceW*0.13));
+    /* 콧대 (bridge sides) — the half of the move most apps skip */
+    [129,358].forEach(i=>toMidline(i,base*0.6,faceW*0.10));
+    /* subtle tip lift along the face's own up-axis */
+    pushOp(A(4),-axx*faceW*0.008*noseI,-axy*faceW*0.008*noseI,faceW*0.09);
+  }
+  if(faceI>0){
+    /* 얼굴 축소 (소두) — one centered shrink over the whole face, applied last
+       so the regional ops above act on the original landmark positions */
+    const mid={x:(top.x+chin.x)/2,y:(top.y+chin.y)/2};
+    ops.push({type:'bulge',cx:mid.x/ar,cy:mid.y,r:al*0.72*rScale,s:-0.055*faceI});
+  }
+  return ops;
+}
+
+/* ═══════════ color sliders ═══════════ */
+const sliderInputs={};
+function paintRange(input){
+  const min=+input.min,max=+input.max;
+  const pct=((+input.value-min)/(max-min))*100;
+  input.style.setProperty('--fill',pct+'%');
+}
+function buildSlider(def,host){
+  const row=document.createElement('div');
+  row.className='srow';
+  const valEl=document.createElement('span'); valEl.className='val'; valEl.textContent='0';
+  const top=document.createElement('div'); top.className='top';
+  const lab=document.createElement('label'); lab.textContent=def.label;
+  top.appendChild(lab); top.appendChild(valEl);
+  const ss=document.createElement('div'); ss.className='ss';
+  ss.innerHTML='<div class="ss-track"><div class="ss-fill"></div><div class="ss-thumb"></div></div>';
+  const fill=ss.querySelector('.ss-fill'), thumb=ss.querySelector('.ss-thumb');
+  const state={val:params[def.key]||0};
+  const paint=()=>{
+    const pct=((state.val-def.min)/(def.max-def.min))*100;
+    fill.style.width=pct+'%';
+    thumb.style.left=pct+'%';
+    valEl.textContent=state.val>0&&def.min<0?'+'+state.val:''+state.val;
+    row.classList.toggle('adjusted',state.val!==0);
+    updateGroupDots();
+  };
+  /* double-tap the label/value → reset just this slider (real taps only, not scroll flicks) */
+  let tapT=0, downX=0, downY=0;
+  top.addEventListener('pointerdown',e=>{ downX=e.clientX; downY=e.clientY; });
+  top.addEventListener('pointerup',e=>{
+    if(Math.abs(e.clientX-downX)>10||Math.abs(e.clientY-downY)>10){ tapT=0; return; }
+    const now=Date.now();
+    if(now-tapT<300){
+      tapT=0;
+      if(state.val===0) return;
+      state.val=0; params[def.key]=0;
+      activePreset='custom'; markChips();
+      paint(); scheduleRender();
+      showToast(def.label+' — 0으로 초기화');
+    } else tapT=now;
+  });
+  const setFromX=(clientX)=>{
+    const r=ss.querySelector('.ss-track').getBoundingClientRect();
+    let t=(clientX-r.left)/r.width; t=t<0?0:t>1?1:t;
+    let v=Math.round(def.min+t*(def.max-def.min));
+    if(v!==state.val){
+      state.val=v; params[def.key]=v;
+      activePreset='custom'; markChips();
+      paint(); scheduleRender();
+      if(def.key==='teeth'&&v>0) maybeDetectForTeeth();
+    }
+  };
+  attachScrollSafeSlider(ss,setFromX);
+  paint();
+  row.appendChild(top); row.appendChild(ss);
+  host.appendChild(row);
+  sliderInputs[def.key]={set:v=>{state.val=v;paint();},paint};
+}
+const groupEls=[];
+SLIDER_GROUPS.forEach(g=>{
+  const grp=document.createElement('div');
+  grp.className='sgroup'+(g.open?'':' closed');
+  const head=document.createElement('div');
+  head.className='sgroup-head';
+  head.innerHTML='<b>'+g.title+'</b><span class="hrt"><span class="gcount"></span><span class="chev">▼</span></span>';
+  const body=document.createElement('div'); body.className='sgroup-body';
+  head.addEventListener('click',()=>grp.classList.toggle('closed'));
+  g.items.forEach(def=>buildSlider(def,body));
+  grp.appendChild(head); grp.appendChild(body);
+  slidersEl.appendChild(grp);
+  groupEls.push({el:grp,items:g.items});
+});
+function updateGroupDots(){
+  groupEls.forEach(G=>{
+    const n=G.items.filter(d=>(params[d.key]||0)!==0).length;
+    G.el.classList.toggle('has-edits',n>0);
+    const gc=G.el.querySelector('.gcount');
+    if(gc) gc.textContent=n||'';
+  });
+}
+function syncSliders(){
+  SLIDER_DEFS.forEach(def=>{
+    sliderInputs[def.key].set(params[def.key]||0);
+  });
+}
+
+/* Scroll-safe slider gesture: a touch only grabs the slider once the
+   finger has moved more horizontally than vertically (or after a short
+   hold). A vertical swipe scrolls the page untouched. */
+function attachScrollSafeSlider(el,onMove){
+  let id=null,sx=0,sy=0,decided=false,active=false,holdT=null;
+  const thumb=el.querySelector('.ss-thumb');
+  const grab=(x)=>{ active=true; decided=true; el.classList.add('grabbed'); onMove(x); };
+  el.addEventListener('pointerdown',e=>{
+    if(id!==null) return;
+    id=e.pointerId; sx=e.clientX; sy=e.clientY; decided=false; active=false;
+    /* tap directly ON the thumb → grab immediately */
+    const tr=thumb.getBoundingClientRect();
+    if(e.clientX>=tr.left-8&&e.clientX<=tr.right+8&&e.clientY>=tr.top-8&&e.clientY<=tr.bottom+8){
+      try{el.setPointerCapture(id);}catch(_){}
+      grab(e.clientX); e.preventDefault(); return;
+    }
+    /* otherwise: short hold also grabs (for precise taps on the track) */
+    holdT=setTimeout(()=>{ if(id!==null&&!decided){ try{el.setPointerCapture(id);}catch(_){} grab(e.clientX); } },180);
+  });
+  el.addEventListener('pointermove',e=>{
+    if(e.pointerId!==id) return;
+    if(!decided){
+      const dx=Math.abs(e.clientX-sx), dy=Math.abs(e.clientY-sy);
+      if(dy>8 && dy>dx){ cancel(); return; }           /* vertical → let page scroll */
+      if(dx>10 && dx>dy){ clearTimeout(holdT); try{el.setPointerCapture(id);}catch(_){} grab(e.clientX); }
+      else return;
+    }
+    if(active){ e.preventDefault(); onMove(e.clientX); }
+  });
+  const end=e=>{ if(e.pointerId!==id) return; finish(); };
+  el.addEventListener('pointerup',end);
+  el.addEventListener('pointercancel',end);
+  function cancel(){ clearTimeout(holdT); id=null; decided=false; active=false; el.classList.remove('grabbed'); }
+  function finish(){ clearTimeout(holdT); id=null; decided=false; active=false; el.classList.remove('grabbed'); }
+}
+
+/* ═══════════ manual brush controls ═══════════ */
+document.querySelectorAll('.brush').forEach(b=>{
+  b.addEventListener('click',()=>{
+    brushType=b.dataset.brush;
+    document.querySelectorAll('.brush').forEach(x=>x.classList.toggle('on',x===b));
+  });
+});
+makeSSlider('brushSizeSS',25,220,90,v=>{ brushSize=v; $('brushSizeVal').textContent=v; });
+makeSSlider('brushStrSS',10,100,50,v=>{ brushStr=v; $('brushStrVal').textContent=v; });
+
+$('undoBtn').addEventListener('click',()=>{
+  if(!manualOps.length){ showToast('되돌릴 보정이 없어요'); return; }
+  manualOps.pop();
+  invalidateWarp(); scheduleRender();
+});
+$('clearManualBtn').addEventListener('click',()=>{
+  if(!manualOps.length) return;
+  manualOps=[];
+  invalidateWarp(); scheduleRender();
+  showToast('수동 보정을 모두 취소했어요');
+});
+
+/* ═══════════ image loading ═══════════ */
+empty.addEventListener('click',()=>fileInput.click());
+changeBtn.addEventListener('click',()=>fileInput.click());
+fileInput.addEventListener('change',e=>{
+  const files=[...(e.target.files||[])];
+  fileInput.value='';
+  if(!files.length) return;
+  hideLearnBar();
+  if(files.length>1){ openBatch(files); return; }
+  const url=URL.createObjectURL(files[0]);
+  const img=new Image();
+  img.onload=()=>{
+    URL.revokeObjectURL(url);
+    fullImg=img;
+    landmarks=null; manualOps=[]; autoOps=[]; autoPresetId='none'; lastRegions=null;
+    markAutoChips(); setFaceStatus('idle');
+    setupPreview();
+    empty.classList.add('hidden');
+    saveBtn.disabled=false; changeBtn.disabled=false;
+    updateHint(); resetView();
+    cmpBtn.classList.remove('hidden');
+    $('actionRow').classList.remove('hidden');
+    updateMagicBtn();
+    scheduleRender();
+    try{
+      if(!localStorage.getItem('idolstudio_hint_v1')){
+        localStorage.setItem('idolstudio_hint_v1','1');
+        showToast('💡 두 손가락으로 확대 · ⇆ 꾹 누르면 원본 비교 · 슬라이더 이름을 두 번 탭하면 그 값만 초기화',6000);
+      }
+    }catch(_){}
+  };
+  img.onerror=()=>showToast('이미지를 불러올 수 없어요');
+  img.src=url;
+});
+
+function fitSize(w,h,max){
+  const s=Math.min(1,max/Math.max(w,h));
+  return [Math.round(w*s),Math.round(h*s)];
+}
+function setupPreview(){
+  const [w,h]=fitSize(fullImg.naturalWidth,fullImg.naturalHeight,PREVIEW_MAX);
+  const c=document.createElement('canvas'); c.width=w; c.height=h;
+  c.getContext('2d').drawImage(fullImg,0,0,w,h);
+  previewData=c.getContext('2d').getImageData(0,0,w,h);
+  photoFeats=null; previewMask=null; teethDetectTried=false;
+  invalidateWarp();
+  mainCanvas.width=w; mainCanvas.height=h;
+  origCanvas.width=w; origCanvas.height=h;
+  overlayCanvas.width=w; overlayCanvas.height=h;
+  origCanvas.getContext('2d').putImageData(previewData,0,0);
+  renderPresetThumbs();
+}
+function invalidateWarp(){ warpCache=null; previewBlur=null; }
+
+/* ═══════════ warping engine (liquify) ═══════════
+   ops are normalized: cx,cy ∈ image fraction · r = fraction of min dim
+   push: dx,dy = displacement as fraction of width/height
+   bulge: s>0 enlarge, s<0 shrink
+   Ops are applied sequentially (like real liquify strokes).
+*/
+function applyOps(imageData, ops){
+  const w=imageData.width, h=imageData.height;
+  const buf=new Uint8ClampedArray(imageData.data);     // working copy
+  const minD=Math.min(w,h);
+  const hA=new Uint8ClampedArray(4), hB=new Uint8ClampedArray(4);
+  for(const op of ops){
+    const cx=op.cx*w, cy=op.cy*h, r=op.r*minD;
+    if(r<1.5) continue;
+    const r2=r*r;
+    const x0=Math.max(0,Math.floor(cx-r)), x1=Math.min(w-1,Math.ceil(cx+r));
+    const y0=Math.max(0,Math.floor(cy-r)), y1=Math.min(h-1,Math.ceil(cy+r));
+    if(x1<x0||y1<y0) continue;
+    const bw=x1-x0+1, bh=y1-y0+1;
+    const scratch=new Uint8ClampedArray(bw*bh*4);
+    const pdx=(op.dx||0)*w, pdy=(op.dy||0)*h;
+    for(let y=y0;y<=y1;y++){
+      for(let x=x0;x<=x1;x++){
+        const ddx=x-cx, ddy=y-cy, d2=ddx*ddx+ddy*ddy;
+        const si=((y-y0)*bw+(x-x0))*4;
+        if(d2>=r2){
+          const bi=(y*w+x)*4;
+          scratch[si]=buf[bi]; scratch[si+1]=buf[bi+1]; scratch[si+2]=buf[bi+2]; scratch[si+3]=buf[bi+3];
+          continue;
+        }
+        const d=Math.sqrt(d2);
+        const t=1-d/r;
+        const fall=t*t*(3-2*t);                        // smoothstep falloff
+        if(op.type==='heal'){
+          /* spot heal: rebuild the circle from clean skin just outside it —
+             a smooth gradient between the two opposite boundary points */
+          const bi=(y*w+x)*4;
+          let dirx=1, diry=0;
+          if(d>0.5){ dirx=ddx/d; diry=ddy/d; }
+          bilinear(buf,w,h,cx+dirx*r*1.15,cy+diry*r*1.15,hA,0);
+          bilinear(buf,w,h,cx-dirx*r*1.15,cy-diry*r*1.15,hB,0);
+          const mix=(d/r+1)/2, k=fall*(op.st||1);
+          for(let c=0;c<3;c++){
+            const val=hB[c]+(hA[c]-hB[c])*mix;
+            scratch[si+c]=buf[bi+c]+(val-buf[bi+c])*k;
+          }
+          scratch[si+3]=buf[bi+3];
+          continue;
+        }
+        let sx,sy;
+        if(op.type==='push'){
+          sx=x-pdx*fall; sy=y-pdy*fall;
+        }else{
+          const k=1-op.s*fall;
+          sx=cx+ddx*k; sy=cy+ddy*k;
+        }
+        bilinear(buf,w,h,sx,sy,scratch,si);
+      }
+    }
+    // write scratch back
+    for(let y=y0;y<=y1;y++){
+      const rowS=((y-y0)*bw)*4, rowB=(y*w+x0)*4;
+      buf.set(scratch.subarray(rowS,rowS+bw*4),rowB);
+    }
+  }
+  return new ImageData(buf,w,h);
+}
+function bilinear(src,w,h,fx,fy,dst,di){
+  fx=fx<0?0:fx>w-1?w-1:fx;
+  fy=fy<0?0:fy>h-1?h-1:fy;
+  const x0=Math.floor(fx), y0=Math.floor(fy);
+  const x1=Math.min(w-1,x0+1), y1=Math.min(h-1,y0+1);
+  const tx=fx-x0, ty=fy-y0;
+  const i00=(y0*w+x0)*4, i10=(y0*w+x1)*4, i01=(y1*w+x0)*4, i11=(y1*w+x1)*4;
+  for(let c=0;c<4;c++){
+    const top=src[i00+c]+(src[i10+c]-src[i00+c])*tx;
+    const bot=src[i01+c]+(src[i11+c]-src[i01+c])*tx;
+    dst[di+c]=top+(bot-top)*ty;
+  }
+}
+function allOps(){ return autoOps.concat(manualOps); }
+
+/* ═══════════ color pipeline ═══════════ */
+function boxBlurRGB(src,w,h,radius){
+  const out=new Float32Array(src.length);
+  const tmp=new Float32Array(src.length);
+  for(let i=0;i<src.length;i++) tmp[i]=src[i];
+  for(let pass=0;pass<2;pass++){
+    blurPass(tmp,out,w,h,radius,true);
+    blurPass(out,tmp,w,h,radius,false);
+  }
+  return tmp;
+}
+function blurPass(src,dst,w,h,r,horiz){
+  /* direct index arithmetic (no per-line closures) — ~3.6× faster, bit-identical */
+  const len=horiz?w:h, lines=horiz?h:w;
+  const norm=1/(2*r+1);
+  const stride=horiz?4:w*4;
+  for(let line=0;line<lines;line++){
+    const base=horiz?(line*w*4):(line*4);
+    for(let ch=0;ch<3;ch++){
+      const b0=base+ch;
+      let acc=0;
+      for(let i=-r;i<=r;i++){
+        const j=i<0?0:(i>len-1?len-1:i);
+        acc+=src[b0+j*stride];
+      }
+      for(let i=0;i<len;i++){
+        dst[b0+i*stride]=acc*norm;
+        const jA=i+r+1, jS=i-r;
+        acc+=src[b0+(jA>len-1?len-1:jA)*stride]-src[b0+(jS<0?0:jS)*stride];
+      }
+    }
+  }
+  for(let i=3;i<src.length;i+=4) dst[i]=src[i];
+}
+function skinWeight(r,g,b){
+  if(r<50) return 0.15;
+  let w=1;
+  if(!(r>g&&r>b*0.9)) w*=0.3;
+  const d=r-g;
+  if(d<8) w*=0.4; else if(d>120) w*=0.4;
+  return w;
+}
+function processPixels(orig,blur,w,h,p,outData,mask){
+  const o=orig.data, out=outData.data;
+  const n=o.length;
+  const smoothAmt=p.smooth/100;
+  const glowAmt=p.glow/100*0.55;
+  const bright=p.bright*1.5;
+  const cont=1+p.contrast/100*0.9;
+  const warm=p.warmth*0.6;
+  const pink=p.pink/100;
+  const satF=1+p.sat/100;
+  const sharpAmt=p.sharp/100*1.2;
+  const sigma=34, twoSig2=2*sigma*sigma;
+  const fade=(p.fade||0)/100, vig=(p.vig||0)/100, tint=(p.tint||0);
+  const expo=Math.pow(2,(p.expo||0)/100*0.8);          // exposure as stops (×)
+  const hi=(p.highlights||0)/100, sh=(p.shadows||0)/100;
+  const wh=(p.whites||0)/100, bl=(p.blacks||0)/100;
+  const vib=(p.vibrance||0)/100;
+  const teethAmt=mask?(p.teeth||0)/100:0;
+  const grain=(p.grain||0)/100;
+  /* LUTs — replace per-pixel Math.exp in the two hottest stages */
+  let smoothLUT=null;
+  if(smoothAmt>0){
+    smoothLUT=new Float32Array(256);
+    for(let v=0;v<256;v++) smoothLUT[v]=Math.exp(-(v*v)/twoSig2);
+  }
+  let toneLUT=null;
+  if(hi||sh||wh||bl){
+    toneLUT=new Float32Array(1024);
+    const bell=(x,c,wd)=>{const t=(x-c)/wd;return Math.exp(-t*t);};
+    for(let v=0;v<1024;v++){
+      const L=v/1023;
+      toneLUT[v]=(hi*bell(L,0.75,0.15)*72)+(sh*bell(L,0.25,0.15)*72)+(wh*bell(L,0.93,0.10)*60)+(bl*bell(L,0.07,0.10)*60);
+    }
+  }
+  const vcx=w/2, vcy=h/2, vmax=Math.hypot(vcx,vcy);
+  let px=0, py=0;
+  for(let i=0;i<n;i+=4){
+    let r=o[i],g=o[i+1],b=o[i+2];
+    const br_=blur[i],bg=blur[i+1],bb=blur[i+2];
+    if(smoothAmt>0){
+      const diff=(Math.abs(r-br_)+Math.abs(g-bg)+Math.abs(b-bb))/3;
+      let wgt=smoothLUT[diff|0];
+      wgt*=(0.35+0.65*skinWeight(r,g,b));
+      const t=smoothAmt*wgt;
+      r+=(br_-r)*t; g+=(bg-g)*t; b+=(bb-b)*t;
+    }
+    if(glowAmt>0){
+      r=255-(255-r)*(255-br_*glowAmt)/255;
+      g=255-(255-g)*(255-bg*glowAmt)/255;
+      b=255-(255-b)*(255-bb*glowAmt)/255;
+    }
+    if(sharpAmt>0){
+      r+=(r-br_)*sharpAmt; g+=(g-bg)*sharpAmt; b+=(b-bb)*sharpAmt;
+    }
+    /* ── Lightroom-style tonal stage (luminance-zone weighted) ── */
+    if(expo!==1){ r*=expo; g*=expo; b*=expo; }
+    if(toneLUT){
+      /* +highlights brightens brights, -highlights recovers(darkens) them */
+      let li=((r*0.299+g*0.587+b*0.114)*4.0117647)|0;   // 1023/255 → LUT index
+      if(li<0)li=0; else if(li>1023)li=1023;
+      const add=toneLUT[li];
+      r+=add; g+=add; b+=add;
+    }
+    r=(r-128)*cont+128+bright;
+    g=(g-128)*cont+128+bright;
+    b=(b-128)*cont+128+bright;
+    r+=warm; b-=warm;
+    if(tint!==0){ g-=tint*0.5; r+=tint*0.25; b+=tint*0.25; }
+    if(fade>0){
+      const lift=fade*72;
+      let t1=1-r/255; if(t1<0)t1=0; r+=lift*t1*t1;
+      let t2=1-g/255; if(t2<0)t2=0; g+=lift*t2*t2;
+      let t3=1-b/255; if(t3<0)t3=0; b+=lift*t3*t3;
+    }
+    if(pink>0){
+      const lum=(r*0.299+g*0.587+b*0.114)/255;
+      const mid=4*lum*(1-lum);
+      const k=pink*0.35*mid;
+      r+=(255-r)*k*0.9; g+=(214-g)*k*0.45; b+=(228-b)*k*0.7;
+    }
+    if(teethAmt>0){
+      const m=mask.data[(py>>2)*mask.mw+(px>>2)]/255;
+      if(m>0.03){
+        const L0=r*0.299+g*0.587+b*0.114;
+        let wl=(L0-70)/80; wl=wl<0?0:wl>1?1:wl;   // teeth are bright; lips/shadow stay
+        const k=teethAmt*m*wl;
+        if(k>0){
+          b+=((r+g)/2-b)*k*0.75;                  // kill the yellow cast
+          const lum3=r*0.299+g*0.587+b*0.114, ds=1-k*0.4;
+          r=lum3+(r-lum3)*ds; g=lum3+(g-lum3)*ds; b=lum3+(b-lum3)*ds;
+          const lift=k*14; r+=lift; g+=lift; b+=lift;
+        }
+      }
+    }
+    if(vib!==0){
+      const mx=Math.max(r,g,b), mn=Math.min(r,g,b);
+      const curSat=(mx-mn)/(mx+1e-6);                  // 0..1
+      const f=1+vib*(1-curSat)*1.1;                    // muted gets more boost
+      const lum=r*0.299+g*0.587+b*0.114;
+      r=lum+(r-lum)*f; g=lum+(g-lum)*f; b=lum+(b-lum)*f;
+    }
+    if(satF!==1){
+      const lum=r*0.299+g*0.587+b*0.114;
+      r=lum+(r-lum)*satF; g=lum+(g-lum)*satF; b=lum+(b-lum)*satF;
+    }
+    if(vig>0){
+      const vdx=(px-vcx)/vmax, vdy=(py-vcy)/vmax;
+      const dd=vdx*vdx+vdy*vdy;
+      const vv=1-vig*1.15*dd*Math.sqrt(dd);
+      r*=vv; g*=vv; b*=vv;
+    }
+    if(grain>0){
+      /* deterministic per-pixel hash → film-like luminance noise */
+      let nz=(px*374761393+py*668265263)|0;
+      nz=((nz^(nz>>13))*1274126177)|0;
+      const gA=((((nz^(nz>>16))&255)/255)-0.5)*grain*26;
+      r+=gA; g+=gA; b+=gA;
+    }
+    px++; if(px===w){px=0;py++;}
+    out[i]=r<0?0:r>255?255:r;
+    out[i+1]=g<0?0:g>255?255:g;
+    out[i+2]=b<0?0:b>255?255:b;
+    out[i+3]=o[i+3];
+  }
+}
+
+/* ═══════════ render ═══════════ */
+function renderPreview(){
+  if(!previewData) return;
+  const w=previewData.width, h=previewData.height;
+  if(!warpCache){
+    const ops=allOps();
+    warpCache = ops.length ? applyOps(previewData,ops) : previewData;
+    previewBlur=null;
+  }
+  if(!previewBlur){
+    const radius=Math.max(2,Math.round(Math.min(w,h)/110));
+    previewBlur=boxBlurRGB(warpCache.data,w,h,radius);
+  }
+  let mask=null;
+  if((params.teeth||0)>0 && landmarks){
+    if(!previewMask) previewMask=mouthMaskFor(landmarks,w,h);
+    mask=previewMask;
+  }
+  if(!previewOut||previewOut.width!==w||previewOut.height!==h) previewOut=new ImageData(w,h);
+  processPixels(warpCache,previewBlur,w,h,params,previewOut,mask);
+  mainCanvas.getContext('2d').putImageData(previewOut,0,0);
+}
+function scheduleRender(){
+  if(renderQueued) return;
+  renderQueued=true;
+  requestAnimationFrame(()=>{ renderQueued=false; renderPreview(); });
+}
+
+/* ═══════════ zoom / pan / compare / liquify gestures ═══════════ */
+const viewport=$('viewport'), cmpBtn=$('cmpBtn'), zoomResetBtn=$('zoomReset');
+const octx=overlayCanvas.getContext('2d');
+const view={s:1,tx:0,ty:0};
+function applyView(){
+  viewport.style.transform='translate('+view.tx+'px,'+view.ty+'px) scale('+view.s+')';
+  zoomResetBtn.classList.toggle('hidden',view.s<=1.01);
+}
+function clampView(){
+  if(view.s<=1){view.s=1;view.tx=0;view.ty=0;return;}
+  if(view.s>5) view.s=5;
+  const W=stage.clientWidth,H=stage.clientHeight;
+  view.tx=Math.min(0,Math.max(W*(1-view.s),view.tx));
+  view.ty=Math.min(0,Math.max(H*(1-view.s),view.ty));
+}
+function resetView(){view.s=1;view.tx=0;view.ty=0;applyView();}
+zoomResetBtn.addEventListener('click',e=>{e.stopPropagation();resetView();});
+
+/* compare: press-and-hold the button (photo stays free for scroll/zoom) */
+cmpBtn.addEventListener('pointerdown',e=>{
+  e.stopPropagation(); e.preventDefault();
+  try{cmpBtn.setPointerCapture(e.pointerId);}catch(_){}
+  showOrig(true);
+});
+cmpBtn.addEventListener('pointerup',()=>showOrig(false));
+cmpBtn.addEventListener('pointercancel',()=>showOrig(false));
+window.addEventListener('pointerup',()=>showOrig(false));
+function showOrig(on){
+  if(!fullImg) return;
+  origCanvas.classList.toggle('show',on);
+  compareTag.classList.toggle('show',on);
+}
+
+const pointers=new Map();
+let gesture=null, dragStart=null, lastMid=null, lastDist=0, lastTap={t:0,x:0,y:0};
+
+function stageToCanvas(e){
+  const rect=mainCanvas.getBoundingClientRect();
+  const cw=mainCanvas.width, ch=mainCanvas.height;
+  if(!cw||!ch) return null;
+  const scale=Math.min(rect.width/cw, rect.height/ch);
+  const dispW=cw*scale, dispH=ch*scale;
+  const offX=rect.left+(rect.width-dispW)/2;
+  const offY=rect.top+(rect.height-dispH)/2;
+  return { x:(e.clientX-offX)/scale, y:(e.clientY-offY)/scale };
+}
+function stagePoint(e){
+  const r=stage.getBoundingClientRect();
+  return {x:e.clientX-r.left,y:e.clientY-r.top};
+}
+function drawBrushOverlay(p,p2){
+  octx.clearRect(0,0,overlayCanvas.width,overlayCanvas.height);
+  if(!p) return;
+  octx.strokeStyle='rgba(255,217,138,.95)';
+  octx.lineWidth=2/view.s;
+  octx.setLineDash([6,5]);
+  octx.beginPath();
+  octx.arc(p.x,p.y,brushSize,0,Math.PI*2);
+  octx.stroke();
+  octx.setLineDash([]);
+  if(p2){
+    octx.strokeStyle='rgba(255,143,184,.95)';
+    octx.lineWidth=3/view.s;
+    octx.beginPath(); octx.moveTo(p.x,p.y); octx.lineTo(p2.x,p2.y); octx.stroke();
+    octx.fillStyle='rgba(255,143,184,.95)';
+    octx.beginPath(); octx.arc(p2.x,p2.y,5,0,Math.PI*2); octx.fill();
+  }
+}
+function clearOverlay(){ octx.clearRect(0,0,overlayCanvas.width,overlayCanvas.height); }
+
+stage.addEventListener('pointerdown',e=>{
+  if(!fullImg) return;
+  try{stage.setPointerCapture(e.pointerId);}catch(_){}
+  if(pointers.size===1 && gesture!=='pinch'){
+    /* second finger lands → pinch zoom */
+    pointers.set(e.pointerId,{x:e.clientX,y:e.clientY});
+    gesture='pinch'; dragStart=null; clearOverlay();
+    const pts=[...pointers.values()];
+    lastDist=Math.hypot(pts[0].x-pts[1].x,pts[0].y-pts[1].y);
+    const r=stage.getBoundingClientRect();
+    lastMid={x:(pts[0].x+pts[1].x)/2-r.left,y:(pts[0].y+pts[1].y)/2-r.top};
+    return;
+  }
+  pointers.set(e.pointerId,{x:e.clientX,y:e.clientY});
+  if(pointers.size===1){
+    if(manualEditing()){
+      gesture='edit';
+      const p=stageToCanvas(e);
+      dragStart=p; if(p) drawBrushOverlay(p);
+    } else if(view.s>1.01){
+      gesture='pan';
+    } else {
+      gesture=null; /* one finger, not zoomed → let the page scroll */
+    }
+  }
+});
+stage.addEventListener('pointermove',e=>{
+  if(!fullImg||!pointers.has(e.pointerId)) return;
+  const prev=pointers.get(e.pointerId);
+  pointers.set(e.pointerId,{x:e.clientX,y:e.clientY});
+  if(gesture==='pinch'&&pointers.size>=2){
+    const pts=[...pointers.values()];
+    const r=stage.getBoundingClientRect();
+    const mid={x:(pts[0].x+pts[1].x)/2-r.left,y:(pts[0].y+pts[1].y)/2-r.top};
+    const dist=Math.hypot(pts[0].x-pts[1].x,pts[0].y-pts[1].y);
+    if(lastDist>4){
+      const ns=Math.min(5,Math.max(1,view.s*dist/lastDist));
+      view.tx=mid.x-((lastMid.x-view.tx)/view.s)*ns;
+      view.ty=mid.y-((lastMid.y-view.ty)/view.s)*ns;
+      view.s=ns;
+      clampView(); applyView();
+    }
+    lastDist=dist; lastMid=mid;
+  } else if(gesture==='pan'){
+    view.tx+=e.clientX-prev.x;
+    view.ty+=e.clientY-prev.y;
+    clampView(); applyView();
+  } else if(gesture==='edit'&&dragStart){
+    const p=stageToCanvas(e);
+    if(p) drawBrushOverlay(dragStart,brushType==='push'?p:null);
+  }
+});
+stage.addEventListener('pointerup',e=>{
+  if(!pointers.has(e.pointerId)) return;
+  pointers.delete(e.pointerId);
+  if(gesture==='pinch'){
+    if(pointers.size<2){ lastDist=0; gesture=null; }
+    return;
+  }
+  if(gesture==='edit'){
+    gesture=null;
+    const end=stageToCanvas(e);
+    const start=dragStart; dragStart=null;
+    clearOverlay();
+    if(start&&end) commitStroke(start,end);
+    return;
+  }
+  if(gesture==='pan') gesture=null;
+  /* double-tap zoom (viewing modes only) */
+  if(!manualEditing()){
+    const now=Date.now(), sp=stagePoint(e);
+    if(now-lastTap.t<300 && Math.hypot(sp.x-lastTap.x,sp.y-lastTap.y)<30){
+      if(view.s>1.01) resetView();
+      else{
+        const ns=2.5;
+        view.tx=sp.x-(sp.x-view.tx)*ns/view.s;
+        view.ty=sp.y-(sp.y-view.ty)*ns/view.s;
+        view.s=ns; clampView(); applyView();
+      }
+      lastTap={t:0,x:0,y:0};
+    } else lastTap={t:now,x:sp.x,y:sp.y};
+  }
+});
+stage.addEventListener('pointercancel',e=>{
+  pointers.delete(e.pointerId);
+  if(pointers.size===0){ gesture=null; dragStart=null; lastDist=0; clearOverlay(); }
+});
+function commitStroke(start,end){
+  const w=mainCanvas.width,h=mainCanvas.height,minD=Math.min(w,h);
+  const str=brushStr/100;
+  if(brushType==='push'){
+    let dx=end.x-start.x, dy=end.y-start.y;
+    const len=Math.hypot(dx,dy);
+    if(len<4) return;
+    const maxLen=brushSize*0.65;
+    if(len>maxLen){dx*=maxLen/len;dy*=maxLen/len;}
+    manualOps.push({type:'push',cx:start.x/w,cy:start.y/h,r:brushSize/minD,dx:dx*str/w,dy:dy*str/h});
+  }else if(brushType==='heal'){
+    manualOps.push({type:'heal',cx:start.x/w,cy:start.y/h,r:brushSize/minD,st:str});
+  }else{
+    manualOps.push({type:'bulge',cx:start.x/w,cy:start.y/h,r:brushSize/minD,s:(brushType==='grow'?1:-1)*0.22*str});
+  }
+  invalidateWarp(); scheduleRender();
+}
+stage.addEventListener('contextmenu',e=>{ if(fullImg) e.preventDefault(); });
+/* photo lets the page scroll normally; only capture touches when editing, pinching, or zoomed-in panning */
+function shouldCapture(t){ return t>=2 || manualEditing() || view.s>1.01; }
+stage.addEventListener('touchstart',e=>{ if(fullImg&&shouldCapture(e.touches.length)) e.preventDefault(); },{passive:false});
+stage.addEventListener('touchmove',e=>{ if(fullImg&&shouldCapture(e.touches.length)) e.preventDefault(); },{passive:false});
+
+/* ═══════════ reset ═══════════ */
+resetBtn.addEventListener('click',()=>{
+  hideLearnBar();
+  params={...DEFAULTS}; activePreset='none';
+  manualOps=[]; autoOps=[]; autoPresetId='none'; autoIntensity=100;
+  intensityCtl.set(100); intensityVal.textContent='100';
+  syncSliders(); markChips(); markAutoChips();
+  if(fullImg) setFaceStatus(landmarks?'ok':'idle');
+  resetView();
+  invalidateWarp(); scheduleRender();
+  showToast('모든 보정값을 초기화했어요');
+});
+
+/* ═══════════ save (full-res re-render) ═══════════ */
+const qualityModal=$('qualityModal');
+saveBtn.addEventListener('click',()=>{
+  if(!fullImg) return;
+  qualityModal.classList.remove('hidden');
+});
+$('qualityClose').addEventListener('click',()=>qualityModal.classList.add('hidden'));
+qualityModal.addEventListener('click',e=>{ if(e.target===qualityModal) qualityModal.classList.add('hidden'); });
+$('qStandard').addEventListener('click',()=>{ qualityModal.classList.add('hidden'); doExport(EXPORT_MAX,'고화질로 렌더링 중…'); });
+$('qOriginal').addEventListener('click',()=>{ qualityModal.classList.add('hidden'); doExport(3000,'최대 화질로 렌더링 중… 조금 걸려요'); });
+function doExport(dim,msg){
+  showBusy(msg);
+  setTimeout(()=>exportAt(dim),50);
+}
+function exportAt(maxDim){
+  try{
+    const [w,h]=fitSize(fullImg.naturalWidth,fullImg.naturalHeight,maxDim);
+    const c=document.createElement('canvas'); c.width=w; c.height=h;
+    const ctx=c.getContext('2d');
+    ctx.drawImage(fullImg,0,0,w,h);
+    let src=ctx.getImageData(0,0,w,h);
+    const ops=allOps();
+    if(ops.length) src=applyOps(src,ops);
+    const radius=Math.max(2,Math.round(Math.min(w,h)/110));
+    const blur=boxBlurRGB(src.data,w,h,radius);
+    const out=new ImageData(w,h);
+    const mask=((params.teeth||0)>0&&landmarks)?mouthMaskFor(landmarks,w,h):null;
+    processPixels(src,blur,w,h,params,out,mask);
+    ctx.putImageData(out,0,0);
+    c.toBlob(async blob=>{
+      if(!blob){
+        /* iOS fails oversized canvases with a null blob (no throw) — retry smaller */
+        if(maxDim>2200){ exportAt(2200); return; }
+        if(maxDim>1500){ exportAt(1500); return; }
+        hideBusy(); showToast('저장에 실패했어요'); return;
+      }
+      hideBusy();
+      const file=new File([blob],'idol_retouch_'+Date.now()+'.jpg',{type:'image/jpeg'});
+      /* share sheet first: on iPhone "이미지 저장" goes straight to 사진첩 */
+      if(navigator.canShare && navigator.canShare({files:[file]})){
+        try{
+          await navigator.share({files:[file]});
+          showToast('✦ 저장됐어요');
+          offerLearn();
+          return;
+        }catch(err){
+          if(err && err.name==='AbortError'){ showToast('저장을 취소했어요'); return; }
+          /* share unsupported mid-flight → fall through to download */
+        }
+      }
+      const a=document.createElement('a');
+      a.href=URL.createObjectURL(blob);
+      a.download=file.name;
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(()=>URL.revokeObjectURL(a.href),4000);
+      showToast('✦ 고화질 사진이 저장됐어요');
+      offerLearn();
+    },'image/jpeg',0.93);
+  }catch(err){
+    /* full-res render can exhaust memory on older phones — retry smaller */
+    if(maxDim>2200){ exportAt(2200); return; }
+    if(maxDim>1500){ exportAt(1500); return; }
+    hideBusy();
+    showToast('저장 중 오류가 발생했어요');
+  }
+}
+
+/* ═══════════ personal preset & taste learning ═══════════ */
+async function applyPersonalAll(){
+  if(!hasProfile()){ showToast('아직 학습된 프로필이 없어요 — ⚙️ 학습에서 만들 수 있어요'); return; }
+  if(profile.colorN>0){
+    params={...DEFAULTS,...personalColor()};
+    activePreset='personal';
+    syncSliders(); markChips();
+  }
+  scheduleRender();
+  if(profile.regionN>0 && fullImg){
+    await applyAutoPreset('personal');
+  }
+  if((params.teeth||0)>0) maybeDetectForTeeth();
+}
+/* Learning guardrail: nothing is learned silently.
+   - color counts only when SHE moved sliders (activePreset==='custom') —
+     saving an untouched built-in preset is the preset's taste, not hers
+   - auto contour counts only for real presets, not 💖 재적용 (feedback loop)
+   - a confirm bar asks before anything enters the profile
+   - the last learning event can be undone in ⚙️ 학습 */
+function collectCurrentColor(){
+  const cs={}; let any=false;
+  SLIDER_DEFS.forEach(d=>{ cs[d.key]=params[d.key]||0; if(cs[d.key]) any=true; });
+  return {cs,any};
+}
+function colorLearnable(){ return activePreset==='custom' && collectCurrentColor().any; }
+function autoContourLearnable(){
+  return autoOps.length>0 && !!lastRegions && autoPresetId!=='personal' && autoPresetId!=='none';
+}
+function learnableNow(){
+  return colorLearnable() || autoContourLearnable() || manualOps.some(o=>o.type!=='heal');
+}
+let learnBarTimer=null;
+function offerLearn(){
+  if(!previewData || !learnableNow()) return;
+  $('learnBar').classList.remove('hidden');
+  clearTimeout(learnBarTimer);
+  learnBarTimer=setTimeout(hideLearnBar,10000);
+}
+function hideLearnBar(){
+  $('learnBar').classList.add('hidden');
+  clearTimeout(learnBarTimer);
+}
+$('learnYes').addEventListener('click',()=>{ hideLearnBar(); commitLearnFromSave(); });
+$('learnNo').addEventListener('click',hideLearnBar);
+
+async function commitLearnFromSave(){
+  const {cs}=collectCurrentColor();
+  const colorOK=colorLearnable();
+  const regions=autoContourLearnable()?{...lastRegions}:{jaw:0,eyes:0,nose:0,cheek:0,face:0};
+  if(manualOps.length){
+    /* her hand edits count too — quietly detect the face if we haven't yet */
+    if(!landmarks){ try{ landmarks=await detectFace(); }catch(_){} }
+    if(landmarks){
+      const m=manualRegionContrib(landmarks,previewData.width,previewData.height,manualOps);
+      regions.jaw=Math.min(150,(regions.jaw||0)+m.jaw);
+      regions.eyes=Math.min(150,(regions.eyes||0)+m.eyes);
+      regions.nose=Math.min(150,(regions.nose||0)+m.nose);
+      regions.cheek=Math.min(150,(regions.cheek||0)+m.cheek);
+    }
+  }
+  const usedContour=regions.jaw>0||regions.eyes>0||regions.nose>0||(regions.cheek||0)>0||(regions.face||0)>0;
+  if(!colorOK && !usedContour) return;
+  if(colorOK) addColorSample(cs);
+  if(usedContour) addRegionSample(regions);
+  const snap={hadColor:colorOK,hadRegion:usedContour,hadSample:false,pair:false,
+              cs:colorOK?{...cs}:null,regions:usedContour?{...regions}:null};
+  if(colorOK){                      // ML samples stay pure: only her own slider values
+    addTrainingSample(currentFeats(), cs, regions);
+    snap.hadSample=true;
+  }
+  profile.lastLearn=snap;
+  saveProfile(); refreshPersonalChips();
+  showToast('💖 학습했어요');
+}
+
+$('undoLearnBtn').addEventListener('click',()=>{
+  const L=profile.lastLearn;
+  if(!L){ showToast('취소할 학습이 없어요'); return; }
+  if(L.hadColor&&L.cs){
+    for(const k in L.cs) profile.colorSum[k]=(profile.colorSum[k]||0)-(L.cs[k]||0);
+    profile.colorN=Math.max(0,profile.colorN-1);
+  }
+  if(L.hadRegion&&L.regions){
+    profile.regionSum.jaw-=L.regions.jaw||0;
+    profile.regionSum.eyes-=L.regions.eyes||0;
+    profile.regionSum.nose-=L.regions.nose||0;
+    profile.regionSum.cheek=(profile.regionSum.cheek||0)-(L.regions.cheek||0);
+    profile.regionSum.face=(profile.regionSum.face||0)-(L.regions.face||0);
+    profile.regionN=Math.max(0,profile.regionN-1);
+  }
+  if(L.hadSample&&profile.samples.length) profile.samples.pop();
+  if(L.pair) profile.pairs=Math.max(0,profile.pairs-1);
+  profile.lastLearn=null;
+  if(profile.samples.length>=5){ profile.ml=mlInit(); mlTrain(profile.ml,profile.samples,200,0.03); }
+  else profile.ml=null;
+  saveProfile(); refreshPersonalChips(); renderProfileStatus();
+  showToast('최근 학습을 취소했어요');
+});
+function refreshPersonalChips(){
+  const has=hasProfile();
+  presetsEl.querySelectorAll('.chip').forEach(c=>{
+    if(c.dataset.id==='personal') c.classList.toggle('hidden',!has);
+  });
+  autoPresetsEl.querySelectorAll('.chip').forEach(c=>{
+    if(c.dataset.id==='personal') c.classList.toggle('hidden',profile.regionN===0);
+  });
+  updateMagicBtn();
+  if(previewData) renderPresetThumbs('personal');
+}
+/* live preset thumbnails — her actual photo through every filter.
+   onlyId re-renders a single chip (e.g. 'personal' after learning). */
+function renderPresetThumbs(onlyId){
+  if(!previewData) return;
+  const src=document.createElement('canvas');
+  src.width=previewData.width; src.height=previewData.height;
+  src.getContext('2d').putImageData(previewData,0,0);
+  const tw=76, th=100, tAR=tw/th;
+  const sAR=previewData.width/previewData.height;
+  let sw,sh,sx,sy;
+  if(sAR>tAR){ sh=previewData.height; sw=sh*tAR; sx=(previewData.width-sw)/2; sy=0; }
+  else{ sw=previewData.width; sh=sw/tAR; sx=0; sy=(previewData.height-sh)/2; }
+  const base=document.createElement('canvas'); base.width=tw; base.height=th;
+  const bctx=base.getContext('2d');
+  bctx.drawImage(src,sx,sy,sw,sh,0,0,tw,th);
+  const baseData=bctx.getImageData(0,0,tw,th);
+  const blur=boxBlurRGB(baseData.data,tw,th,2);
+  presetsEl.querySelectorAll('.chip').forEach(chip=>{
+    if(onlyId&&chip.dataset.id!==onlyId) return;
+    const pr=PRESETS.find(p=>p.id===chip.dataset.id);
+    const cv=chip.querySelector('canvas.thumb');
+    if(!pr||!cv) return;
+    let p=null;
+    if(pr.id==='personal'){ if(hasProfile()) p={...DEFAULTS,...personalColor()}; }
+    else p={...DEFAULTS,...pr.p};
+    if(!p) return;
+    const out=new ImageData(tw,th);
+    processPixels(baseData,blur,tw,th,p,out,null);
+    cv.getContext('2d').putImageData(out,0,0);
+    chip.classList.add('has-thumb');
+  });
+}
+function updateMagicBtn(){
+  $('magicBtn').classList.toggle('hidden', !(fullImg&&hasProfile()));
+}
+$('magicBtn').addEventListener('click',()=>applyPersonalAll());
+refreshPersonalChips();
+
+/* ═══════════ calibration (before/after pairs) ═══════════ */
+const trainModal=$('trainModal'), calibInput=$('calibInput');
+let calibTarget=null, calibBefore=null, calibAfter=null, calibResultData=null;
+
+$('trainBtn').addEventListener('click',()=>{ trainModal.classList.remove('hidden'); renderProfileStatus(); renderSyncStatus(); });
+$('trainClose').addEventListener('click',()=>trainModal.classList.add('hidden'));
+trainModal.addEventListener('click',e=>{ if(e.target===trainModal) trainModal.classList.add('hidden'); });
+$('slotBefore').addEventListener('click',()=>{ calibTarget='before'; calibInput.click(); });
+$('slotAfter').addEventListener('click',()=>{ calibTarget='after'; calibInput.click(); });
+
+calibInput.addEventListener('change',e=>{
+  const f=e.target.files && e.target.files[0];
+  calibInput.value='';
+  if(!f) return;
+  const url=URL.createObjectURL(f);
+  const img=new Image();
+  img.onload=async()=>{
+    URL.revokeObjectURL(url);
+    const [w,h]=fitSize(img.naturalWidth,img.naturalHeight,700);
+    const c=document.createElement('canvas'); c.width=w; c.height=h;
+    c.getContext('2d').drawImage(img,0,0,w,h);
+    showBusy('얼굴 분석 중…');
+    try{
+      const lm=await detectFaceOn(c);
+      hideBusy();
+      const entry={lm,w,h,canvas:c};
+      const slot=calibTarget==='before'?$('slotBefore'):$('slotAfter');
+      slot.innerHTML='';
+      const t=document.createElement('img');
+      t.src=c.toDataURL('image/jpeg',0.6);
+      slot.appendChild(t); slot.classList.add('done');
+      if(calibTarget==='before') calibBefore=entry; else calibAfter=entry;
+      $('analyzeBtn').disabled=!(calibBefore&&calibAfter);
+    }catch(err){
+      hideBusy();
+      showToast(err&&err.message==='noface'?'얼굴을 찾지 못했어요 — 정면 사진을 써주세요':'분석 모델을 불러올 수 없어요');
+    }
+  };
+  img.onerror=()=>showToast('이미지를 불러올 수 없어요');
+  img.src=url;
+});
+
+function faceMetrics(lm,w,h){
+  const ar=w/h;
+  const A=i=>({x:lm[i].x*ar,y:lm[i].y});
+  const d=(a,b)=>Math.hypot(a.x-b.x,a.y-b.y);
+  const rc=lm[468]?{x:lm[468].x*ar,y:lm[468].y}:A(159);
+  const lc=lm[473]?{x:lm[473].x*ar,y:lm[473].y}:A(386);
+  const eyeD=d(rc,lc)||1e-6;
+  const jawW=(d(A(136),A(365))+d(A(150),A(379)))/2;
+  const eyeS=(d(A(33),A(133))+2*d(A(159),A(145))+d(A(362),A(263))+2*d(A(386),A(374)))/6;
+  const noseW=d(A(64),A(294));
+  const cheekW=d(A(116),A(345));
+  return {jaw:jawW/eyeD, eye:eyeS/eyeD, nose:noseW/eyeD, cheek:cheekW/eyeD};
+}
+function rawStats(canvas,w,h){
+  const c=document.createElement('canvas'); c.width=w; c.height=h;
+  c.getContext('2d').drawImage(canvas,0,0,w,h);
+  const d=c.getContext('2d').getImageData(0,0,w,h).data;
+  const n=w*h, lum=new Float32Array(n);
+  let mean=0, rb=0, chroma=0;
+  for(let i=0,j=0;i<n;i++,j+=4){
+    const r=d[j],g=d[j+1],b=d[j+2];
+    const L=r*0.299+g*0.587+b*0.114;
+    lum[i]=L; mean+=L; rb+=r-b;
+    chroma+=Math.abs(r-L)+Math.abs(g-L)+Math.abs(b-L);
+  }
+  mean/=n; rb/=n; chroma/=n;
+  let shadowFrac=0, highFrac=0;
+  for(let i=0;i<n;i++){ if(lum[i]<60)shadowFrac++; else if(lum[i]>200)highFrac++; }
+  shadowFrac/=n; highFrac/=n;
+  let std=0;
+  for(let i=0;i<n;i++){const t=lum[i]-mean; std+=t*t;}
+  std=Math.sqrt(std/n)||1e-6;
+  let hf=0,hc=0;
+  for(let y=1;y<h-1;y++)for(let x=1;x<w-1;x++){
+    const i=y*w+x;
+    hf+=Math.abs(lum[i]-(lum[i-1]+lum[i+1]+lum[i-w]+lum[i+w])/4); hc++;
+  }
+  hf=hf/hc||1e-6;
+  return {lum,mean,std,rb,chroma,hf,shadowFrac,highFrac};
+}
+function computeCalibration(B,A){
+  const clampV=(v,a,b)=>Math.max(a,Math.min(b,v));
+  const mB=faceMetrics(B.lm,B.w,B.h), mA=faceMetrics(A.lm,A.w,A.h);
+  const regions={
+    jaw:  clampV(Math.round((1-mA.jaw/mB.jaw)*1538),0,150),
+    eyes: clampV(Math.round((mA.eye/mB.eye-1)*1250),0,150),
+    nose: clampV(Math.round((1-mA.nose/mB.nose)*1000),0,150),
+    cheek:clampV(Math.round((1-mA.cheek/mB.cheek)*1538),0,150),
+    face: 0   /* uniform shrink cancels out of landmark ratios — unmeasurable from pairs */
+  };
+  const [sw,sh]=fitSize(B.w,B.h,320);
+  const sb=rawStats(B.canvas,sw,sh), sa=rawStats(A.canvas,sw,sh);
+  let lift=0,cnt=0;
+  for(let i=0;i<sb.lum.length;i++) if(sb.lum[i]<70){ lift+=sa.lum[i]-sb.lum[i]; cnt++; }
+  lift=cnt?lift/cnt:0;
+  const hfRatio=sa.hf/sb.hf;
+  const smooth=clampV(Math.round((1-hfRatio)*220),0,85);
+  const color={
+    bright:  clampV(Math.round((sa.mean-sb.mean)/1.5),-50,50),
+    contrast:clampV(Math.round((sa.std/sb.std-1)/0.009),-50,50),
+    warmth:  clampV(Math.round((sa.rb-sb.rb)/1.2),-50,50),
+    sat:     clampV(Math.round((sa.chroma/Math.max(sb.chroma,1)-1)*100),-100,50),
+    fade:    clampV(Math.round(lift*1.6),0,50),
+    smooth:  smooth,
+    glow:    Math.round(smooth*0.25),
+    sharp:   smooth>0?0:clampV(Math.round((hfRatio-1)*150),0,60),
+    pink:0, vig:0
+  };
+  return {regions,color};
+}
+function summaryHTML(r){
+  const g=r.regions, c=r.color;
+  const pct=(v,k)=>v>0?(k==='eyes'?'+':'-')+(v/(k==='jaw'||k==='cheek'?15.38:k==='eyes'?12.5:10)).toFixed(1)+'%':'변화 없음';
+  return '분석 결과 — 턱선 <b>'+pct(g.jaw,'jaw')+'</b> · 광대 <b>'+pct(g.cheek||0,'cheek')+'</b> · 눈 <b>'+pct(g.eyes,'eyes')+'</b> · 코 <b>'+pct(g.nose,'nose')+'</b><br>'+
+         '컬러 — 밝기 '+c.bright+' · 대비 '+c.contrast+' · 색온도 '+c.warmth+' · 채도 '+c.sat+' · 피부 보정 '+c.smooth+' · 페이드 '+c.fade;
+}
+$('analyzeBtn').addEventListener('click',()=>{
+  if(!(calibBefore&&calibAfter)) return;
+  showBusy('차이 분석 중…');
+  setTimeout(()=>{
+    try{
+      calibResultData=computeCalibration(calibBefore,calibAfter);
+      hideBusy();
+      $('calibResult').innerHTML=summaryHTML(calibResultData);
+      $('calibResult').classList.remove('hidden');
+      $('addProfileBtn').classList.remove('hidden');
+    }catch(err){ hideBusy(); showToast('분석 중 오류가 발생했어요'); }
+  },30);
+});
+$('addProfileBtn').addEventListener('click',()=>{
+  if(!calibResultData) return;
+  addColorSample(calibResultData.color);
+  addRegionSample(calibResultData.regions);
+  const [fw,fh]=fitSize(calibBefore.w,calibBefore.h,320);
+  addTrainingSample(featsFromStats(rawStats(calibBefore.canvas,fw,fh)).concat(faceFeats(calibBefore.lm,calibBefore.w,calibBefore.h)), calibResultData.color, calibResultData.regions);
+  profile.pairs++;
+  profile.lastLearn={hadColor:true,hadRegion:true,hadSample:true,pair:true,
+                     cs:{...calibResultData.color},regions:{...calibResultData.regions}};
+  saveProfile(); refreshPersonalChips(); renderProfileStatus();
+  calibBefore=calibAfter=null; calibResultData=null;
+  $('slotBefore').innerHTML='<span>📷<br>원본<br>(Before)</span>'; $('slotBefore').classList.remove('done');
+  $('slotAfter').innerHTML='<span>✨<br>보정본<br>(After)</span>'; $('slotAfter').classList.remove('done');
+  $('analyzeBtn').disabled=true;
+  $('calibResult').classList.add('hidden'); $('addProfileBtn').classList.add('hidden');
+  showToast('💖 프로필에 추가됐어요');
+});
+$('resetProfileBtn').addEventListener('click',()=>{
+  if(!confirm('학습된 프로필을 모두 지울까요? 되돌릴 수 없어요.')) return;
+  profile={v:4,colorSum:{},colorN:0,regionSum:{jaw:0,eyes:0,nose:0,cheek:0,face:0},regionN:0,pairs:0,samples:[],ml:null};
+  saveProfile(); refreshPersonalChips(); renderProfileStatus();
+  showToast('프로필을 초기화했어요');
+});
+function renderSyncStatus(){
+  $('syncStatus').innerHTML = syncUrl
+    ? '☁️ 클라우드 동기화 — <b>연결됨</b> · 저장할 때마다 구글 드라이브에 자동 백업돼요'
+    : '☁️ 클라우드 동기화 — <b>꺼짐</b> · 설정하면 폰을 바꿔도 학습이 유지돼요';
+}
+$('syncSetupBtn').addEventListener('click',()=>{
+  const txt=prompt('Apps Script 웹앱 URL을 붙여넣어 주세요 (?key=비밀키 포함)\n비워서 확인하면 동기화가 꺼져요', syncUrl||'');
+  if(txt===null) return;
+  const t=txt.trim();
+  if(!t){
+    syncUrl=null;
+    try{ localStorage.removeItem(SYNC_KEY); }catch(_){}
+    renderSyncStatus(); showToast('동기화를 껐어요');
+    return;
+  }
+  if(!/^https:\/\/script\.google(usercontent)?\.com\//.test(t)){
+    showToast('Apps Script URL이 아닌 것 같아요'); return;
+  }
+  syncUrl=t;
+  try{ localStorage.setItem(SYNC_KEY,t); }catch(_){}
+  renderSyncStatus();
+  cloudPull(true);
+});
+$('syncNowBtn').addEventListener('click',()=>cloudPull(true));
+$('exportProfileBtn').addEventListener('click',async()=>{
+  if(!hasProfile()&&!profile.samples.length){ showToast('백업할 프로필이 없어요'); return; }
+  try{
+    await navigator.clipboard.writeText(JSON.stringify(profile));
+    showToast('프로필이 복사됐어요 — 메모 앱 등에 붙여넣어 보관하세요');
+  }catch(_){ showToast('복사에 실패했어요'); }
+});
+$('importProfileBtn').addEventListener('click',()=>{
+  const txt=prompt('백업해둔 프로필 텍스트를 붙여넣어 주세요');
+  if(!txt) return;
+  try{
+    const p=JSON.parse(txt);
+    if(!p || p.v<1 || p.v>4) throw 0;
+    localStorage.setItem(PKEY,txt);
+    profile=loadProfile();
+    refreshPersonalChips(); renderProfileStatus();
+    showToast('💖 프로필을 불러왔어요');
+  }catch(_){ showToast('프로필 형식이 올바르지 않아요'); }
+});
+function renderProfileStatus(){
+  const tasteN=Math.max(profile.colorN-profile.pairs,0);
+  const mlN=profile.samples.length, mlW=Math.round(mlBlendWeight()*100);
+  const mlLine = mlW>0
+    ? 'AI 모델 — 학습 데이터 <b>'+mlN+'개</b> · 사진별 맞춤 예측 <b>'+mlW+'%</b> 적용 중 🧠'
+    : 'AI 모델 — 학습 데이터 <b>'+mlN+'개</b> / 30개부터 사진별 맞춤 예측이 시작돼요';
+  $('profileStatus').innerHTML = hasProfile()
+    ? '학습 현황 — 전후 사진 <b>'+profile.pairs+'쌍</b> · 사용 학습 <b>'+tasteN+'회</b><br>'+mlLine+'<br>💖 나의 프리셋이 활성화됐어요. 사진을 저장할 때마다 자동으로 더 똑똑해져요.'
+    : '아직 학습된 데이터가 없어요. 전후 사진 한 쌍부터 시작해보세요!';
+}
+
+/* ═══════════ crop / rotate / straighten ═══════════ */
+const cropModal=$('cropModal'), cropCanvas=$('cropCanvas'), cropBtn=$('cropBtn');
+const cctx=cropCanvas.getContext('2d');
+let cropSrc=null, cropRot=0, cropAngle=0, cropRect={x:0,y:0,w:1,h:1}, cropAspect=0, cropDrag=null, cropDpr=1;
+const CROP_ASPECTS=[['자유',0],['1:1',1],['3:4',3/4],['4:5',4/5],['9:16',9/16]];
+CROP_ASPECTS.forEach(([name,v])=>{
+  const b=document.createElement('button');
+  b.textContent=name; b.dataset.v=v;
+  b.addEventListener('click',()=>{ cropAspect=v; fitRectToAspect(); markAspects(); drawCrop(); });
+  $('cropAspects').appendChild(b);
+});
+function markAspects(){
+  $('cropAspects').querySelectorAll('button').forEach(b=>b.classList.toggle('on',+b.dataset.v===cropAspect));
+}
+const cropAngleCtl=makeSSlider('cropAngleSS',-15,15,0,v=>{
+  cropAngle=v; $('cropAngleVal').textContent=v+'°'; drawCrop();
+});
+cropBtn.addEventListener('click',openCrop);
+$('cropClose').addEventListener('click',()=>cropModal.classList.add('hidden'));
+cropModal.addEventListener('click',e=>{ if(e.target===cropModal) cropModal.classList.add('hidden'); });
+function openCrop(){
+  if(!fullImg) return;
+  cropRot=0; cropAngle=0; cropAspect=0;
+  cropAngleCtl.set(0); $('cropAngleVal').textContent='0°';
+  buildCropSrc();
+  cropModal.classList.remove('hidden');
+  sizeCropCanvas();
+  cropRect={x:0,y:0,w:1,h:1};
+  markAspects(); drawCrop();
+}
+function buildCropSrc(){
+  const rotOdd=cropRot%2===1;
+  const [w,h]=fitSize(rotOdd?fullImg.naturalHeight:fullImg.naturalWidth,
+                      rotOdd?fullImg.naturalWidth:fullImg.naturalHeight,1400);
+  const c=document.createElement('canvas'); c.width=w; c.height=h;
+  const x=c.getContext('2d');
+  x.translate(w/2,h/2); x.rotate(cropRot*Math.PI/2);
+  const iw=rotOdd?h:w, ih=rotOdd?w:h;
+  x.drawImage(fullImg,-iw/2,-ih/2,iw,ih);
+  cropSrc=c;
+}
+function sizeCropCanvas(){
+  const box=cropCanvas.parentElement;
+  const s=Math.min(box.clientWidth/cropSrc.width, box.clientHeight/cropSrc.height);
+  const cw=Math.max(1,Math.round(cropSrc.width*s)), ch=Math.max(1,Math.round(cropSrc.height*s));
+  cropDpr=Math.min(2,window.devicePixelRatio||1);
+  cropCanvas.style.width=cw+'px'; cropCanvas.style.height=ch+'px';
+  cropCanvas.width=Math.round(cw*cropDpr); cropCanvas.height=Math.round(ch*cropDpr);
+}
+function cropDims(){ return [cropCanvas.width/cropDpr, cropCanvas.height/cropDpr]; }
+function coverScale(ang,W,H){
+  const a=Math.abs(Math.cos(ang)), b=Math.abs(Math.sin(ang));
+  return Math.max((W*a+H*b)/W,(W*b+H*a)/H);
+}
+function drawCrop(){
+  if(!cropSrc) return;
+  const [cw,ch]=cropDims();
+  cctx.setTransform(cropDpr,0,0,cropDpr,0,0);
+  cctx.clearRect(0,0,cw,ch);
+  const ang=cropAngle*Math.PI/180;
+  cctx.save();
+  cctx.translate(cw/2,ch/2); cctx.rotate(ang);
+  const s=coverScale(ang,cw,ch);
+  cctx.scale(s,s);
+  cctx.drawImage(cropSrc,-cw/2,-ch/2,cw,ch);
+  cctx.restore();
+  const rx=cropRect.x*cw, ry=cropRect.y*ch, rw=cropRect.w*cw, rh=cropRect.h*ch;
+  cctx.fillStyle='rgba(0,0,0,.55)';
+  cctx.fillRect(0,0,cw,ry);
+  cctx.fillRect(0,ry+rh,cw,ch-ry-rh);
+  cctx.fillRect(0,ry,rx,rh);
+  cctx.fillRect(rx+rw,ry,cw-rx-rw,rh);
+  cctx.strokeStyle='rgba(255,255,255,.9)'; cctx.lineWidth=1.5;
+  cctx.strokeRect(rx,ry,rw,rh);
+  cctx.strokeStyle='rgba(255,255,255,.25)'; cctx.lineWidth=1;
+  for(let i=1;i<3;i++){
+    cctx.beginPath(); cctx.moveTo(rx+rw*i/3,ry); cctx.lineTo(rx+rw*i/3,ry+rh); cctx.stroke();
+    cctx.beginPath(); cctx.moveTo(rx,ry+rh*i/3); cctx.lineTo(rx+rw,ry+rh*i/3); cctx.stroke();
+  }
+  cctx.fillStyle='#fff';
+  cropCornerPts(rx,ry,rw,rh).forEach(p=>{ cctx.beginPath(); cctx.arc(p.x,p.y,7,0,Math.PI*2); cctx.fill(); });
+}
+function cropCornerPts(rx,ry,rw,rh){
+  return [{x:rx,y:ry,ax:rx+rw,ay:ry+rh},{x:rx+rw,y:ry,ax:rx,ay:ry+rh},
+          {x:rx,y:ry+rh,ax:rx+rw,ay:ry},{x:rx+rw,y:ry+rh,ax:rx,ay:ry}];
+}
+function cropPoint(e){
+  const r=cropCanvas.getBoundingClientRect();
+  return {x:e.clientX-r.left,y:e.clientY-r.top};
+}
+function fitRectToAspect(){
+  if(!cropAspect) return;
+  const [cw,ch]=cropDims();
+  let w=cw, h=w/cropAspect;
+  if(h>ch){ h=ch; w=h*cropAspect; }
+  cropRect={x:(cw-w)/2/cw,y:(ch-h)/2/ch,w:w/cw,h:h/ch};
+}
+cropCanvas.addEventListener('pointerdown',e=>{
+  if(!cropSrc) return;
+  e.preventDefault();
+  try{cropCanvas.setPointerCapture(e.pointerId);}catch(_){}
+  const pt=cropPoint(e);
+  const [cw,ch]=cropDims();
+  const rx=cropRect.x*cw, ry=cropRect.y*ch, rw=cropRect.w*cw, rh=cropRect.h*ch;
+  const corner=cropCornerPts(rx,ry,rw,rh).find(p=>Math.hypot(pt.x-p.x,pt.y-p.y)<26);
+  if(corner) cropDrag={type:'corner',ax:corner.ax,ay:corner.ay};
+  else if(pt.x>=rx&&pt.x<=rx+rw&&pt.y>=ry&&pt.y<=ry+rh) cropDrag={type:'move',ox:pt.x-rx,oy:pt.y-ry};
+  else cropDrag=null;
+});
+cropCanvas.addEventListener('pointermove',e=>{
+  if(!cropDrag) return;
+  e.preventDefault();
+  const pt=cropPoint(e);
+  const [cw,ch]=cropDims();
+  if(cropDrag.type==='corner'){
+    applyCornerDrag(pt.x,pt.y,cropDrag.ax,cropDrag.ay,cw,ch);
+  }else{
+    const rw=cropRect.w*cw, rh=cropRect.h*ch;
+    const nx=Math.max(0,Math.min(cw-rw,pt.x-cropDrag.ox));
+    const ny=Math.max(0,Math.min(ch-rh,pt.y-cropDrag.oy));
+    cropRect.x=nx/cw; cropRect.y=ny/ch;
+  }
+  drawCrop();
+});
+cropCanvas.addEventListener('pointerup',()=>{ cropDrag=null; });
+cropCanvas.addEventListener('pointercancel',()=>{ cropDrag=null; });
+function applyCornerDrag(px,py,ax,ay,cw,ch){
+  px=Math.max(0,Math.min(cw,px)); py=Math.max(0,Math.min(ch,py));
+  const sx=px-ax<0?-1:1, sy=py-ay<0?-1:1;
+  let w=Math.abs(px-ax), h=Math.abs(py-ay);
+  const minPx=48;
+  const availW=sx>0?cw-ax:ax, availH=sy>0?ch-ay:ay;
+  if(cropAspect){
+    h=w/cropAspect;
+    if(h>availH){ h=availH; w=h*cropAspect; }
+    if(w>availW){ w=availW; h=w/cropAspect; }
+    if(h<minPx){ h=minPx; w=h*cropAspect; }
+  }else{
+    w=Math.min(Math.max(minPx,w),availW);
+    h=Math.min(Math.max(minPx,h),availH);
+  }
+  cropRect={x:(sx>0?ax:ax-w)/cw, y:(sy>0?ay:ay-h)/ch, w:w/cw, h:h/ch};
+}
+$('rotate90Btn').addEventListener('click',()=>{
+  cropRot=(cropRot+1)%4;
+  buildCropSrc(); sizeCropCanvas();
+  cropRect={x:0,y:0,w:1,h:1}; fitRectToAspect();
+  drawCrop();
+});
+$('cropResetBtn').addEventListener('click',()=>{
+  cropRot=0; cropAngle=0; cropAspect=0;
+  cropAngleCtl.set(0); $('cropAngleVal').textContent='0°';
+  buildCropSrc(); sizeCropCanvas();
+  cropRect={x:0,y:0,w:1,h:1};
+  markAspects(); drawCrop();
+});
+$('cropApplyBtn').addEventListener('click',()=>{
+  showBusy('자르는 중…');
+  setTimeout(applyCrop,30);
+});
+function applyCrop(maxDim){
+  maxDim=maxDim||3600;         /* 3600² stays under iOS's canvas-area limit */
+  try{
+    const rotOdd=cropRot%2===1;
+    const [W,H]=fitSize(rotOdd?fullImg.naturalHeight:fullImg.naturalWidth,
+                        rotOdd?fullImg.naturalWidth:fullImg.naturalHeight,maxDim);
+    const base=document.createElement('canvas'); base.width=W; base.height=H;
+    const bx=base.getContext('2d');
+    const ang=cropAngle*Math.PI/180;
+    bx.translate(W/2,H/2); bx.rotate(cropRot*Math.PI/2+ang);
+    const s=coverScale(ang,W,H);
+    bx.scale(s,s);
+    const iw=rotOdd?H:W, ih=rotOdd?W:H;
+    bx.drawImage(fullImg,-iw/2,-ih/2,iw,ih);
+    const sx=Math.round(cropRect.x*W), sy=Math.round(cropRect.y*H);
+    const sw=Math.max(1,Math.round(cropRect.w*W)), sh=Math.max(1,Math.round(cropRect.h*H));
+    const outC=document.createElement('canvas'); outC.width=sw; outC.height=sh;
+    outC.getContext('2d').drawImage(base,sx,sy,sw,sh,0,0,sw,sh);
+    outC.toBlob(blob=>{
+      if(!blob){
+        if(maxDim>2400){ applyCrop(2400); return; }
+        hideBusy(); showToast('자르기에 실패했어요'); return;
+      }
+      const url=URL.createObjectURL(blob);
+      const img=new Image();
+      img.onload=()=>{
+        URL.revokeObjectURL(url);
+        const hadWarp=manualOps.length||autoOps.length;
+        fullImg=img;
+        landmarks=null; manualOps=[]; autoOps=[]; autoPresetId='none'; lastRegions=null;
+        hideLearnBar();
+        markAutoChips(); setFaceStatus('idle');
+        setupPreview(); resetView(); scheduleRender();
+        hideBusy(); cropModal.classList.add('hidden');
+        showToast(hadWarp?'잘랐어요 ✂ 윤곽 보정은 다시 적용해주세요':'잘랐어요 ✂');
+      };
+      img.onerror=()=>{ hideBusy(); showToast('자르기에 실패했어요'); };
+      img.src=url;
+    },'image/jpeg',0.96);
+  }catch(err){
+    if(maxDim>2400){ applyCrop(2400); return; }
+    hideBusy(); showToast('자르기에 실패했어요');
+  }
+}
+
+/* ═══════════ batch (일괄 보정 → 한 번에 저장) ═══════════ */
+const batchModal=$('batchModal'), batchGrid=$('batchGrid');
+let batchItems=[], batchRunning=false, batchCancel=false;
+$('batchClose').addEventListener('click',()=>{ batchCancel=true; batchModal.classList.add('hidden'); });
+batchModal.addEventListener('click',e=>{ if(e.target===batchModal&&!batchRunning) batchModal.classList.add('hidden'); });
+function openBatch(files){
+  if(files.length>30) showToast('한 번에 최대 30장까지 가능해요 — 앞의 30장만 불러왔어요');
+  batchItems=files.slice(0,30).map(f=>({file:f,status:'wait',thumb:null}));
+  batchCancel=false;
+  $('batchInfo').innerHTML = hasProfile()
+    ? '💖 <b>나의 프리셋</b>(학습된 스타일)을 모든 사진에 적용한 뒤 한 번에 저장해요. 사진마다 얼굴을 인식해서 윤곽도 자동으로 맞춰요.'
+    : '아직 학습 프로필이 없어서 <b>현재 조절된 보정값</b>을 모든 사진에 똑같이 적용해요.';
+  renderBatchGrid();
+  $('batchRunBtn').disabled=false;
+  $('batchRunBtn').textContent='전체 보정하고 저장';
+  batchModal.classList.remove('hidden');
+  /* thumbnails load SEQUENTIALLY — 30 concurrent full-res decodes would OOM a phone */
+  (async()=>{
+    const items=batchItems;
+    for(const it of items){
+      if(items!==batchItems) return;          // a newer selection replaced this one
+      try{
+        const img=await loadImageFile(it.file);
+        const [w,h]=fitSize(img.naturalWidth,img.naturalHeight,240);
+        const c=document.createElement('canvas'); c.width=w; c.height=h;
+        c.getContext('2d').drawImage(img,0,0,w,h);
+        it.thumb=c.toDataURL('image/jpeg',0.6);
+      }catch(_){ it.status='err'; }
+      renderBatchGrid();
+    }
+  })();
+}
+function renderBatchGrid(){
+  batchGrid.innerHTML='';
+  batchItems.forEach(it=>{
+    const d=document.createElement('div'); d.className='batch-item';
+    if(it.thumb){ const im=document.createElement('img'); im.src=it.thumb; d.appendChild(im); }
+    const s=document.createElement('span'); s.className='batch-status';
+    s.textContent=it.status==='run'?'⏳':it.status==='done'?'✓':it.status==='err'?'✗':'';
+    if(it.status==='done') s.classList.add('ok');
+    if(it.status==='err') s.classList.add('bad');
+    if(s.textContent) d.appendChild(s);
+    batchGrid.appendChild(d);
+  });
+}
+function loadImageFile(f){
+  return new Promise((res,rej)=>{
+    const url=URL.createObjectURL(f);
+    const img=new Image();
+    img.onload=()=>{ URL.revokeObjectURL(url); res(img); };
+    img.onerror=()=>{ URL.revokeObjectURL(url); rej(new Error('img')); };
+    img.src=url;
+  });
+}
+$('batchRunBtn').addEventListener('click',runBatch);
+async function runBatch(){
+  if(batchRunning||!batchItems.length) return;
+  if(!hasProfile()){
+    const any=SLIDER_DEFS.some(d=>params[d.key]) || (autoPresetId!=='none'&&autoPresetId!=='personal');
+    if(!any){ showToast('적용할 보정값이 없어요 — 먼저 보정값을 조절해주세요'); return; }
+  }
+  batchRunning=true; batchCancel=false;
+  const btn=$('batchRunBtn'); btn.disabled=true;
+  const outFiles=[];
+  const stamp=Date.now();
+  for(let i=0;i<batchItems.length;i++){
+    if(batchCancel) break;
+    const it=batchItems[i];
+    if(it.status==='err') continue;
+    it.status='run'; renderBatchGrid();
+    btn.textContent=(i+1)+' / '+batchItems.length+' 처리 중…';
+    try{
+      const blob=await processBatchPhoto(it.file);
+      outFiles.push(new File([blob],'idol_retouch_'+stamp+'_'+(i+1)+'.jpg',{type:'image/jpeg'}));
+      it.status='done';
+    }catch(err){ it.status='err'; }
+    renderBatchGrid();
+    await new Promise(r=>setTimeout(r,30));   // let the UI breathe
+  }
+  batchRunning=false;
+  btn.disabled=false; btn.textContent='전체 보정하고 저장';
+  if(batchCancel||!outFiles.length){
+    if(!batchCancel) showToast('보정에 실패했어요');
+    return;
+  }
+  if(navigator.canShare && navigator.canShare({files:outFiles})){
+    try{
+      await navigator.share({files:outFiles});
+      showToast('✦ '+outFiles.length+'장이 저장됐어요');
+      return;
+    }catch(err){
+      if(err && err.name==='AbortError'){ showToast('저장을 취소했어요'); return; }
+    }
+  }
+  for(const f of outFiles){
+    const a=document.createElement('a');
+    a.href=URL.createObjectURL(f); a.download=f.name;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(u=>URL.revokeObjectURL(u),4000,a.href);
+    await new Promise(r=>setTimeout(r,350));
+  }
+  showToast('✦ '+outFiles.length+'장이 저장됐어요');
+}
+async function processBatchPhoto(file){
+  const img=await loadImageFile(file);
+  const [w,h]=fitSize(img.naturalWidth,img.naturalHeight,EXPORT_MAX);
+  const c=document.createElement('canvas'); c.width=w; c.height=h;
+  const ctx=c.getContext('2d');
+  ctx.drawImage(img,0,0,w,h);
+  let lm=null;
+  const wantFace = hasProfile() || (autoPresetId!=='none'&&autoPresetId!=='personal');
+  if(wantFace){ try{ lm=await detectFaceOn(c); }catch(_){ lm=null; } }
+  let colorP, regions=null;
+  if(hasProfile()){
+    const [sw2,sh2]=fitSize(w,h,320);
+    const feats=featsFromStats(rawStats(c,sw2,sh2)).concat(faceFeats(lm,w,h));
+    colorP={...DEFAULTS,...personalColor(feats)};
+    if(profile.regionN>0&&lm) regions=personalRegions(feats);
+  }else{
+    colorP={...params};
+    if(lm&&autoPresetId!=='none'&&autoPresetId!=='personal')
+      regions=regionsForPreset(autoPresetId,autoIntensity);
+  }
+  let src=ctx.getImageData(0,0,w,h);
+  if(regions&&lm){
+    const ops=genAutoOps(lm,regions,w,h);
+    if(ops.length) src=applyOps(src,ops);
+  }
+  const radius=Math.max(2,Math.round(Math.min(w,h)/110));
+  const blur=boxBlurRGB(src.data,w,h,radius);
+  const out=new ImageData(w,h);
+  const mask=((colorP.teeth||0)>0&&lm)?mouthMaskFor(lm,w,h):null;
+  processPixels(src,blur,w,h,colorP,out,mask);
+  ctx.putImageData(out,0,0);
+  return await new Promise((res,rej)=>c.toBlob(b=>b?res(b):rej(new Error('blob')),'image/jpeg',0.93));
+}
+
+/* ═══════════ busy / toast ═══════════ */
+function showBusy(msg){ busyMsg.textContent=msg||'처리 중…'; busy.classList.add('show'); }
+function hideBusy(){ busy.classList.remove('show'); }
+let toastTimer;
+function showToast(msg,dur){
+  toast.textContent=msg;
+  toast.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer=setTimeout(()=>toast.classList.remove('show'),dur||2400);
+}
+
+/* if migration cleared the model but samples survive, rebuild it once on load */
+if(!profile.ml && profile.samples && profile.samples.length>=5){
+  profile.ml=mlInit();
+  mlTrain(profile.ml,profile.samples,200,0.03);
+  try{ localStorage.setItem(PKEY,JSON.stringify(profile)); }catch(_){}
+}
+
+cloudPull(false);   /* fetch newer cloud profile on every launch */
+
+})();
+</script>
+</body>
+</html>
