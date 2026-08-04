@@ -1,6 +1,18 @@
 <!DOCTYPE html>
 <!-- ═══════════════════════════════════════════════════════════════
   아이돌 보정실 — VERSION CHANGELOG (백업: ../_backups/retouch/)
+  v18 · 2026-07-20 · 아이폰 UX 다듬기: 헤더 버튼 탭 영역 확대(31→42px),
+                    카테고리줄과 저장바 사이 여백 확보, 자르기 미리보기 높이 적응형
+                    (작은 아이폰서 적용 버튼 잘림 해결), 짧은 화면 프리셋 썸네일 축소,
+                    선택한 프리셋 자동 스크롤
+  v17 · 2026-07-20 · 헤더 버튼 줄바꿈 수정: ↩ ↪ ⚙️학습 초기화 버튼 텍스트가
+                    두 줄로 접히던 문제 — nowrap+flex-shrink, 화살표 버튼 컴팩트,
+                    eyebrow 축소로 한 줄 유지(좁은 화면은 … 처리)
+  v16 · 2026-07-20 · 수동 보정 대폭 개선 (유저 피드백):
+                    · 크기+강도 두 슬라이더를 항상 함께 표시 (강도 놓치던 문제)
+                    · 밀기를 연속 스트로크로 — 드래그 경로를 따라 섬세하게 변형
+                    · 변위 필드 단일 리샘플 엔진(누적 뭉개짐 제거, 바이큐빅) + 실시간 미리보기
+                    · 자동 윤곽 경로는 그대로 유지(무회귀)
   v15 · 2026-07-20 · 저장 흐름 개선(유저 리포트: "저장 눌렀는데 공유 화면이 떠요"):
                     저장 모달에 사진첩 저장(공유)/파일 저장 선택 + 공유 화면 안내 문구,
                     품질·저장방식 기억, 공유 실패 시 파일 저장 폴백, 일괄저장도 동일 적용
@@ -82,14 +94,16 @@
   .app{max-width:520px;margin:0 auto;height:100vh;height:100dvh;display:flex;flex-direction:column;overflow:hidden;padding:env(safe-area-inset-top) 16px 0}
 
   /* ── header ───────────────────── */
-  header{flex:0 0 auto;padding:10px 4px 8px;display:flex;align-items:baseline;justify-content:space-between}
-  .brand{display:flex;flex-direction:column;gap:3px}
-  .eyebrow{font-size:.65rem;letter-spacing:.32em;color:var(--rose);font-weight:700;text-transform:uppercase}
-  h1{font-size:1.2rem;font-weight:800;letter-spacing:-.02em}
+  header{flex:0 0 auto;padding:10px 4px 8px;display:flex;align-items:center;justify-content:space-between;gap:10px}
+  .brand{display:flex;flex-direction:column;gap:3px;min-width:0}
+  .eyebrow{font-size:.6rem;letter-spacing:.2em;color:var(--rose);font-weight:700;text-transform:uppercase;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  h1{font-size:1.2rem;font-weight:800;letter-spacing:-.02em;white-space:nowrap}
+  .top-actions{display:flex;gap:5px;flex-shrink:0}
   h1 .light{background:linear-gradient(90deg,var(--rose),var(--gold) 60%,var(--lav));-webkit-background-clip:text;background-clip:text;color:transparent}
-  .reset-btn{background:none;border:1px solid var(--line);color:var(--sub);font-size:.75rem;padding:7px 13px;border-radius:99px;cursor:pointer;font-family:inherit}
+  .reset-btn{background:none;border:1px solid var(--line);color:var(--sub);font-size:.75rem;padding:11px 12px;border-radius:99px;cursor:pointer;font-family:inherit;white-space:nowrap;flex-shrink:0;line-height:1}
   .reset-btn:active{background:var(--panel2)}
   .reset-btn.dim{opacity:.35}
+  .navbtn{padding:11px 12px;font-size:.92rem}
 
   /* ── stage ────────────────────── */
   .stage{
@@ -172,7 +186,7 @@
      row 1: the ONE active slider · row 2: params/presets strip · row 3: category icons */
   .dock{
     flex:0 0 auto;display:flex;flex-direction:column;gap:6px;
-    padding:8px 0 calc(86px + env(safe-area-inset-bottom));
+    padding:8px 0 calc(94px + env(safe-area-inset-bottom));
   }
   .legacy-hide{display:none!important}
 
@@ -180,6 +194,14 @@
   .tool-slider .ss{flex:1}
   .ts-label{font-size:.76rem;font-weight:700;color:var(--ink);white-space:nowrap}
   .ts-val{font-size:.76rem;font-weight:700;color:var(--rose);min-width:32px;text-align:right;font-variant-numeric:tabular-nums}
+
+  /* manual mode: both 크기 + 강도 always visible together (v16) */
+  .dual-slider{display:none;flex-direction:column;gap:1px;padding:1px 2px 2px}
+  .dual-slider.on{display:flex}
+  .dsrow{display:flex;align-items:center;gap:10px;height:31px}
+  .ds-label{font-size:.73rem;font-weight:700;color:var(--ink);width:30px;flex:0 0 auto}
+  .dsrow .ss{flex:1}
+  .ds-val{font-size:.73rem;font-weight:700;color:var(--rose);width:30px;text-align:right;flex:0 0 auto;font-variant-numeric:tabular-nums}
 
   .param-strip{display:flex;gap:8px;overflow-x:auto;scrollbar-width:none;padding:2px;align-items:center;min-height:46px}
   .param-strip::-webkit-scrollbar{display:none}
@@ -209,6 +231,11 @@
   .param-strip .chip .gel{margin-bottom:5px}
   .param-strip .chip.has-thumb{width:78px;min-width:78px;padding:5px 6px 6px}
   .param-strip .chip .thumb{margin-bottom:4px;border-radius:7px}
+  /* short screens (e.g. iPhone SE): smaller preset chips → more room for the photo */
+  @media (max-height:700px){
+    .param-strip .chip.has-thumb{width:62px;min-width:62px}
+    .param-strip .chip b{font-size:.66rem}
+  }
 
   /* ── tabs ─────────────────────── */
   .tabs{display:flex;gap:8px;margin-top:0;position:sticky;top:0;z-index:3;background:var(--bg);padding:8px 0 6px}
@@ -347,7 +374,8 @@
   .action-btn:active{background:var(--panel2)}
 
   /* ── crop modal ───────────────── */
-  .crop-stage{height:46dvh;background:#000;border-radius:14px;display:flex;align-items:center;justify-content:center;overflow:hidden;touch-action:none;margin-top:4px}
+  /* cap by remaining space so 적용하기 stays visible on short iPhones (SE) */
+  .crop-stage{height:min(46dvh, calc(84dvh - 310px));background:#000;border-radius:14px;display:flex;align-items:center;justify-content:center;overflow:hidden;touch-action:none;margin-top:4px}
   #cropCanvas{touch-action:none;display:block}
   .crop-aspects{display:flex;gap:8px;margin-top:12px}
   .crop-aspects button{flex:1;border:1px solid var(--line);background:var(--panel2);color:var(--sub);border-radius:10px;padding:9px 0;font-family:inherit;font-size:.76rem;font-weight:700;cursor:pointer}
@@ -386,9 +414,9 @@
       <div class="eyebrow">K-pop Retouch Studio</div>
       <h1>아이돌 <span class="light">보정실</span></h1>
     </div>
-    <div style="display:flex;gap:6px">
-      <button class="reset-btn dim" id="histUndo">↩</button>
-      <button class="reset-btn dim" id="histRedo">↪</button>
+    <div class="top-actions">
+      <button class="reset-btn navbtn dim" id="histUndo" aria-label="실행 취소">↩</button>
+      <button class="reset-btn navbtn dim" id="histRedo" aria-label="다시 실행">↪</button>
       <button class="reset-btn" id="trainBtn">⚙️ 학습</button>
       <button class="reset-btn" id="resetBtn">초기화</button>
     </div>
@@ -417,6 +445,10 @@
     <span class="ts-label" id="tsLabel"></span>
     <div class="ss" id="tsSS"><div class="ss-track"><div class="ss-fill"></div><div class="ss-thumb"></div></div></div>
     <span class="ts-val" id="tsVal">0</span>
+  </div>
+  <div class="dual-slider" id="manualDual">
+    <div class="dsrow"><span class="ds-label">크기</span><div class="ss" id="mSizeSS"><div class="ss-track"><div class="ss-fill"></div><div class="ss-thumb"></div></div></div><span class="ds-val" id="mSizeVal">70</span></div>
+    <div class="dsrow"><span class="ds-label">강도</span><div class="ss" id="mStrSS"><div class="ss-track"><div class="ss-fill"></div><div class="ss-thumb"></div></div></div><span class="ds-val" id="mStrVal">50</span></div>
   </div>
   <div class="param-strip" id="paramStrip"></div>
   <div class="cat-strip" id="catStrip"></div>
@@ -601,7 +633,7 @@ let detecting = false;
 let curTab = 'color';         // 'color' | 'contour'
 let contourMode = 'auto';     // 'auto' | 'manual'
 let brushType = 'push';
-let brushSize = 90, brushStr = 50;
+let brushSize = 70, brushStr = 50;
 
 let lastRegions = null;       // contour intensities used for current autoOps
 
@@ -852,13 +884,23 @@ function manualRegionContrib(lm,w,h,ops){
   const nose={x:lm[1].x*ar,y:lm[1].y};
   const out={jaw:0,eyes:0,nose:0,cheek:0,face:0};
   for(const op of ops){
+    if(op.type==='stroke'&&op.pts&&op.pts.length>1){
+      /* net drag as a push at the stroke midpoint */
+      const p0=op.pts[0], pN=op.pts[op.pts.length-1];
+      const p={x:((p0.x+pN.x)/2)*ar,y:(p0.y+pN.y)/2};
+      const mag=Math.hypot((pN.x-p0.x)*ar,(pN.y-p0.y))*(op.st||1);
+      if(d(p,nose)<faceW*0.16) out.nose+=mag/(faceW*0.018)*100;
+      else if(cheekPts.some(q=>d(p,q)<faceW*0.18)) out.cheek+=mag/(faceW*0.020)*100*0.5;
+      else if(jawPts.some(q=>d(p,q)<faceW*0.22)) out.jaw+=mag/(faceW*0.026)*100*0.5;
+      continue;
+    }
     const p={x:op.cx*ar,y:op.cy};
     if(op.type==='push'){
       const mag=Math.hypot((op.dx||0)*ar,(op.dy||0));
       if(d(p,nose)<faceW*0.16) out.nose+=mag/(faceW*0.018)*100;
       else if(cheekPts.some(q=>d(p,q)<faceW*0.18)) out.cheek+=mag/(faceW*0.020)*100*0.5;
       else if(jawPts.some(q=>d(p,q)<faceW*0.22)) out.jaw+=mag/(faceW*0.026)*100*0.5;
-    }else if(op.s>0){
+    }else if(op.type==='bulge'&&op.s>0){
       if(d(p,rc)<faceW*0.2 || d(p,lc)<faceW*0.2) out.eyes+=op.s/0.12*100*0.5;
     }
   }
@@ -1072,8 +1114,21 @@ PRESETS.forEach(pr=>{
   if(pr.id==='personal') b.classList.add('hidden');
   presetsEl.appendChild(b);
 });
+/* keep the selected chip centered in its horizontal strip (v18) —
+   scroll the actual scroller by the measured offset (scrollIntoView is
+   unreliable with the nested overflow containers here) */
+function scrollChipIntoView(chip){
+  if(!chip) return;
+  const sc=chip.parentElement;
+  if(!sc || sc.scrollWidth<=sc.clientWidth+2) return;
+  const cr=chip.getBoundingClientRect(), sr=sc.getBoundingClientRect();
+  if(cr.width===0) return;
+  const delta=(cr.left+cr.right)/2-(sr.left+sr.right)/2;
+  sc.scrollBy({left:delta,behavior:'smooth'});
+}
 function markChips(){
   presetsEl.querySelectorAll('.chip').forEach(c=>c.classList.toggle('on',c.dataset.id===activePreset));
+  scrollChipIntoView(presetsEl.querySelector('.chip.on'));
 }
 
 /* ═══════════ auto preset chips ═══════════ */
@@ -1088,6 +1143,7 @@ AUTO_PRESETS.forEach(pr=>{
 });
 function markAutoChips(){
   autoPresetsEl.querySelectorAll('.chip').forEach(c=>c.classList.toggle('on',c.dataset.id===autoPresetId));
+  scrollChipIntoView(autoPresetsEl.querySelector('.chip.on'));
 }
 function makeSSlider(elId,min,max,initial,onChange){
   const el=$(elId);
@@ -1572,6 +1628,122 @@ function bilinear(src,w,h,fx,fy,dst,di){
 }
 function allOps(){ return autoOps.concat(manualOps); }
 
+/* ═══════════ delicate manual warp: unified displacement field ═══════════
+   Manual push/bulge accumulate into a single displacement field, then the
+   image is resampled ONCE (bicubic) — no cumulative blur from stacking ops,
+   and continuous drag strokes deform smoothly. Auto-contour keeps its own
+   sequential applyOps path untouched. (v16) */
+function buildWarpField(ops,w,h){
+  const minD=Math.min(w,h);
+  const GS=Math.max(4,Math.round(minD/300));   // grid step px (coarser at high res)
+  const gx=Math.ceil(w/GS)+1, gy=Math.ceil(h/GS)+1;
+  const fx=new Float32Array(gx*gy), fy=new Float32Array(gx*gy);
+  const dab=(px,py,dispx,dispy,R)=>{
+    if(R<1) return;
+    const R2=R*R;
+    const i0=Math.max(0,Math.floor((px-R)/GS)), i1=Math.min(gx-1,Math.ceil((px+R)/GS));
+    const j0=Math.max(0,Math.floor((py-R)/GS)), j1=Math.min(gy-1,Math.ceil((py+R)/GS));
+    for(let j=j0;j<=j1;j++){ const ny=j*GS;
+      for(let i=i0;i<=i1;i++){ const nx=i*GS;
+        const ex=nx-px, ey=ny-py, d2=ex*ex+ey*ey;
+        if(d2>=R2) continue;
+        const t=1-Math.sqrt(d2)/R, fall=t*t*(3-2*t);
+        const idx=j*gx+i;
+        fx[idx]+=dispx*fall; fy[idx]+=dispy*fall;
+      }
+    }
+  };
+  for(const op of ops){
+    const R=op.r*minD;
+    if(op.type==='stroke'){
+      const str=op.st||1, pts=op.pts;
+      if(!pts||pts.length<2) continue;
+      const step=Math.max(1,R*0.25);
+      let prevx=pts[0].x*w, prevy=pts[0].y*h;
+      for(let k=1;k<pts.length;k++){
+        const cxk=pts[k].x*w, cyk=pts[k].y*h;
+        const sdx=cxk-prevx, sdy=cyk-prevy, len=Math.hypot(sdx,sdy);
+        if(len>=0.5){
+          const n=Math.max(1,Math.ceil(len/step));
+          for(let s=1;s<=n;s++) dab(prevx+sdx*s/n,prevy+sdy*s/n,(sdx/n)*str,(sdy/n)*str,R);
+        }
+        prevx=cxk; prevy=cyk;
+      }
+    }else if(op.type==='bulge'){
+      /* radial: node displacement = (node-c)*s*fall  (matches sequential form) */
+      const cx=op.cx*w, cy=op.cy*h, s=op.s, R2=R*R;
+      const i0=Math.max(0,Math.floor((cx-R)/GS)), i1=Math.min(gx-1,Math.ceil((cx+R)/GS));
+      const j0=Math.max(0,Math.floor((cy-R)/GS)), j1=Math.min(gy-1,Math.ceil((cy+R)/GS));
+      for(let j=j0;j<=j1;j++){ const ny=j*GS;
+        for(let i=i0;i<=i1;i++){ const nx=i*GS;
+          const ex=nx-cx, ey=ny-cy, d2=ex*ex+ey*ey;
+          if(d2>=R2) continue;
+          const t=1-Math.sqrt(d2)/R, fall=t*t*(3-2*t), idx=j*gx+i;
+          fx[idx]+=ex*s*fall; fy[idx]+=ey*s*fall;
+        }
+      }
+    }
+  }
+  return {fx,fy,gx,gy,GS,w,h};
+}
+function fieldHasWarp(f){
+  for(let i=0;i<f.fx.length;i++) if(f.fx[i]||f.fy[i]) return true;
+  return false;
+}
+/* Catmull-Rom bicubic tap */
+function cubicTap(t,a,b,c,d){ return b+0.5*t*(c-a+t*(2*a-5*b+4*c-d+t*(3*(b-c)+d-a))); }
+function bicubicSample(src,w,h,fx,fy,dst,di){
+  fx=fx<0?0:fx>w-1?w-1:fx; fy=fy<0?0:fy>h-1?h-1:fy;
+  const x1=Math.floor(fx), y1=Math.floor(fy), tx=fx-x1, ty=fy-y1;
+  const xm=x1>0?x1-1:0, xp=x1<w-1?x1+1:w-1, xpp=x1<w-2?x1+2:w-1;
+  for(let c=0;c<4;c++){
+    let r0,r1,r2,r3;
+    { const yy=(y1>0?y1-1:0)*w;
+      r0=cubicTap(tx,src[(yy+xm)*4+c],src[(yy+x1)*4+c],src[(yy+xp)*4+c],src[(yy+xpp)*4+c]); }
+    { const yy=y1*w;
+      r1=cubicTap(tx,src[(yy+xm)*4+c],src[(yy+x1)*4+c],src[(yy+xp)*4+c],src[(yy+xpp)*4+c]); }
+    { const yy=(y1<h-1?y1+1:h-1)*w;
+      r2=cubicTap(tx,src[(yy+xm)*4+c],src[(yy+x1)*4+c],src[(yy+xp)*4+c],src[(yy+xpp)*4+c]); }
+    { const yy=(y1<h-2?y1+2:h-1)*w;
+      r3=cubicTap(tx,src[(yy+xm)*4+c],src[(yy+x1)*4+c],src[(yy+xp)*4+c],src[(yy+xpp)*4+c]); }
+    const v=cubicTap(ty,r0,r1,r2,r3);
+    dst[di+c]=v<0?0:v>255?255:v;
+  }
+}
+function warpFieldRender(imageData,f,smooth,region){
+  const w=imageData.width, h=imageData.height, src=imageData.data;
+  const {fx,fy,gx,gy,GS}=f;
+  const out=new Uint8ClampedArray(src);        // start as a copy (untouched outside region)
+  const sample=smooth?bicubicSample:bilinear;
+  const x0=region?Math.max(0,region.x0):0, y0=region?Math.max(0,region.y0):0;
+  const x1=region?Math.min(w-1,region.x1):w-1, y1=region?Math.min(h-1,region.y1):h-1;
+  for(let y=y0;y<=y1;y++){
+    let gyf=y/GS, gj=gyf|0; if(gj>gy-2)gj=gy-2; const ty=gyf-gj, jb=gj*gx;
+    for(let x=x0;x<=x1;x++){
+      let gxf=x/GS, gi=gxf|0; if(gi>gx-2)gi=gx-2; const txx=gxf-gi;
+      const i00=jb+gi, i10=i00+1, i01=i00+gx, i11=i01+1;
+      const dx=(fx[i00]*(1-txx)+fx[i10]*txx)*(1-ty)+(fx[i01]*(1-txx)+fx[i11]*txx)*ty;
+      const dy=(fy[i00]*(1-txx)+fy[i10]*txx)*(1-ty)+(fy[i01]*(1-txx)+fy[i11]*txx)*ty;
+      const di=(y*w+x)*4;
+      if(dx===0&&dy===0){ continue; }           // copy already holds source
+      sample(src,w,h,x-dx,y-dy,out,di);
+    }
+  }
+  return new ImageData(out,w,h);
+}
+/* full warp chain: auto (sequential, unchanged) → manual geom (field) → heal */
+function applyAllWarps(img,smooth){
+  let base=autoOps.length?applyOps(img,autoOps):img;
+  const geom=manualOps.filter(o=>o.type==='stroke'||o.type==='bulge');
+  const heal=manualOps.filter(o=>o.type==='heal');
+  if(geom.length){
+    const f=buildWarpField(geom,base.width,base.height);
+    if(fieldHasWarp(f)) base=warpFieldRender(base,f,smooth!==false);
+  }
+  if(heal.length) base=applyOps(base,heal);
+  return base;
+}
+
 /* ═══════════ color pipeline ═══════════ */
 function boxBlurRGB(src,w,h,radius){
   const out=new Float32Array(src.length);
@@ -1751,8 +1923,7 @@ function renderPreview(){
   if(!previewData) return;
   const w=previewData.width, h=previewData.height;
   if(!warpCache){
-    const ops=allOps();
-    warpCache = ops.length ? applyOps(previewData,ops) : previewData;
+    warpCache = applyAllWarps(previewData,true);
     previewBlur=null;
   }
   if(!previewBlur){
@@ -1809,12 +1980,14 @@ function showOrig(on){
 
 const pointers=new Map();
 let gesture=null, dragStart=null, lastMid=null, lastDist=0, lastTap={t:0,x:0,y:0};
+let liveStrokePts=null, liveBase=null, liveWarpQueued=false;   // push-stroke live preview
 /* Ghost-pointer purge: when the native photo picker / share sheet interrupts a
    touch, mobile browsers may never fire pointerup — the stuck "finger" then
    turns the next single-finger touch into a runaway pinch zoom. Clear all
    tracked pointers whenever the page loses focus or the picker opens. */
 function purgePointers(){
-  pointers.clear(); gesture=null; dragStart=null; lastDist=0; clearOverlay();
+  pointers.clear(); gesture=null; dragStart=null; lastDist=0;
+  liveStrokePts=null; liveBase=null; liveWarpQueued=false; clearOverlay();
 }
 window.addEventListener('blur',purgePointers);
 document.addEventListener('visibilitychange',()=>{ if(document.hidden) purgePointers(); });
@@ -1872,7 +2045,15 @@ stage.addEventListener('pointerdown',e=>{
     if(manualEditing()){
       gesture='edit';
       const p=stageToCanvas(e);
-      dragStart=p; if(p) drawBrushOverlay(p);
+      dragStart=p;
+      if(p){
+        drawBrushOverlay(p);
+        if(brushType==='push'){
+          /* begin a continuous stroke — snapshot the graded image for live warp */
+          liveStrokePts=[{x:p.x,y:p.y}];
+          try{ liveBase=mainCanvas.getContext('2d').getImageData(0,0,mainCanvas.width,mainCanvas.height); }catch(_){ liveBase=null; }
+        }
+      }
     } else if(view.s>1.01){
       gesture='pan';
     } else {
@@ -1905,7 +2086,15 @@ stage.addEventListener('pointermove',e=>{
     clampView(); applyView();
   } else if(gesture==='edit'&&dragStart){
     const p=stageToCanvas(e);
-    if(p) drawBrushOverlay(dragStart,brushType==='push'?p:null);
+    if(p){
+      if(brushType==='push'&&liveStrokePts){
+        liveStrokePts.push({x:p.x,y:p.y});
+        drawBrushOverlay(p,null);           // ring follows the finger
+        scheduleLiveWarp();                 // live, delicate preview of the drag
+      }else{
+        drawBrushOverlay(dragStart,null);
+      }
+    }
   }
 });
 stage.addEventListener('pointerup',e=>{
@@ -1920,7 +2109,12 @@ stage.addEventListener('pointerup',e=>{
     const end=stageToCanvas(e);
     const start=dragStart; dragStart=null;
     clearOverlay();
-    if(start&&end) commitStroke(start,end);
+    if(brushType==='push'){
+      const pts=liveStrokePts; liveStrokePts=null; liveBase=null; liveWarpQueued=false;
+      if(pts&&pts.length) commitPushStroke(pts);
+    }else if(start&&end){
+      commitStroke(start,end);
+    }
     return;
   }
   if(gesture==='pan') gesture=null;
@@ -1941,20 +2135,51 @@ stage.addEventListener('pointerup',e=>{
 });
 stage.addEventListener('pointercancel',e=>{
   pointers.delete(e.pointerId);
-  if(pointers.size===0){ gesture=null; dragStart=null; lastDist=0; clearOverlay(); }
+  if(pointers.size===0){
+    const wasLive=!!liveStrokePts;
+    gesture=null; dragStart=null; lastDist=0;
+    liveStrokePts=null; liveBase=null; liveWarpQueued=false; clearOverlay();
+    if(wasLive) scheduleRender();   // discard the uncommitted live warp
+  }
 });
+/* live warp preview during a push drag — warp only the stroke's bounding box
+   of the pre-stroke graded image (fast, bilinear), so she sees the deformation
+   form as she drags. The real pipeline re-renders on commit. */
+function scheduleLiveWarp(){
+  if(liveWarpQueued||!liveBase||!liveStrokePts) return;
+  liveWarpQueued=true;
+  requestAnimationFrame(()=>{
+    liveWarpQueued=false;
+    if(!liveBase||!liveStrokePts||liveStrokePts.length<2) return;
+    const w=mainCanvas.width,h=mainCanvas.height,minD=Math.min(w,h);
+    const op={type:'stroke',r:brushSize/minD,st:brushStr/100,
+              pts:liveStrokePts.map(p=>({x:p.x/w,y:p.y/h}))};
+    const f=buildWarpField([op],w,h);
+    if(!fieldHasWarp(f)) return;
+    const R=brushSize+2;
+    let minx=w,miny=h,maxx=0,maxy=0;
+    for(const p of liveStrokePts){ if(p.x<minx)minx=p.x; if(p.x>maxx)maxx=p.x; if(p.y<miny)miny=p.y; if(p.y>maxy)maxy=p.y; }
+    const region={x0:(minx-R)|0,y0:(miny-R)|0,x1:(maxx+R)|0,y1:(maxy+R)|0};
+    const warped=warpFieldRender(liveBase,f,false,region);
+    mainCanvas.getContext('2d').putImageData(warped,0,0);
+  });
+}
+function commitPushStroke(pts){
+  if(pts.length<2){
+    /* a tap with the push brush = nudge; needs at least a tiny movement */
+    invalidateWarp(); scheduleRender(); return;
+  }
+  const w=mainCanvas.width,h=mainCanvas.height,minD=Math.min(w,h);
+  histPush();
+  manualOps.push({type:'stroke',r:brushSize/minD,st:brushStr/100,
+                  pts:pts.map(p=>({x:p.x/w,y:p.y/h}))});
+  invalidateWarp(); scheduleRender();
+}
 function commitStroke(start,end){
   const w=mainCanvas.width,h=mainCanvas.height,minD=Math.min(w,h);
   const str=brushStr/100;
   histPush();
-  if(brushType==='push'){
-    let dx=end.x-start.x, dy=end.y-start.y;
-    const len=Math.hypot(dx,dy);
-    if(len<4) return;
-    const maxLen=brushSize*0.65;
-    if(len>maxLen){dx*=maxLen/len;dy*=maxLen/len;}
-    manualOps.push({type:'push',cx:start.x/w,cy:start.y/h,r:brushSize/minD,dx:dx*str/w,dy:dy*str/h});
-  }else if(brushType==='heal'){
+  if(brushType==='heal'){
     manualOps.push({type:'heal',cx:start.x/w,cy:start.y/h,r:brushSize/minD,st:str});
   }else{
     manualOps.push({type:'bulge',cx:start.x/w,cy:start.y/h,r:brushSize/minD,s:(brushType==='grow'?1:-1)*0.22*str});
@@ -2035,8 +2260,7 @@ function exportAt(maxDim,mode){
     const ctx=c.getContext('2d');
     ctx.drawImage(fullImg,0,0,w,h);
     let src=ctx.getImageData(0,0,w,h);
-    const ops=allOps();
-    if(ops.length) src=applyOps(src,ops);
+    src=applyAllWarps(src,true);
     const radius=Math.max(2,Math.round(Math.min(w,h)/110));
     const blur=boxBlurRGB(src.data,w,h,radius);
     const out=new ImageData(w,h);
@@ -2874,6 +3098,9 @@ function refreshDots(){
     p.classList.toggle('adjusted',(params[p.dataset.key]||0)!==0);
   });
 }
+/* manual dual sliders — both 크기 + 강도 visible together (v16) */
+const mSizeCtl=makeSSlider('mSizeSS',12,200,brushSize,v=>{ brushSize=v; $('mSizeVal').textContent=v; $('brushSizeVal').textContent=v; });
+const mStrCtl =makeSSlider('mStrSS',10,100,brushStr,v=>{ brushStr=v; $('mStrVal').textContent=v; $('brushStrVal').textContent=v; });
 function parkStrips(){
   colorPane.appendChild(presetsEl);
   autoPanel.appendChild(autoPresetsEl);
@@ -2885,6 +3112,7 @@ function setCat(id){
   catStrip.querySelectorAll('.cat').forEach(c=>c.classList.toggle('on',c.dataset.id===id));
   parkStrips();
   paramStrip.innerHTML='';
+  $('manualDual').classList.remove('on');
   if(cat.keys){                       /* slider category */
     setTab('color'); setContourMode('auto');
     cat.keys.forEach(k=>{
@@ -2912,6 +3140,10 @@ function setCat(id){
     });
   }else if(id==='manual'){
     setTab('contour'); setContourMode('manual');
+    tsHide();
+    $('manualDual').classList.add('on');       // 크기 + 강도 both visible
+    mSizeCtl.set(brushSize); $('mSizeVal').textContent=brushSize;
+    mStrCtl.set(brushStr);   $('mStrVal').textContent=brushStr;
     const brushes=[['push','↘ 밀기'],['shrink','◉ 축소'],['grow','⊕ 확대'],['heal','🩹 잡티']];
     brushes.forEach(([bt,label])=>{
       const p=makePill(label);
@@ -2924,21 +3156,10 @@ function setCat(id){
       });
       paramStrip.appendChild(p);
     });
-    const sizeP=makePill('크기'), strP=makePill('강도');
-    sizeP.addEventListener('click',()=>{
-      sizeP.classList.add('on'); strP.classList.remove('on');
-      tsBind('__bsize','브러시 크기',25,220,brushSize,v=>{ brushSize=v; $('brushSizeVal').textContent=v; });
-    });
-    strP.addEventListener('click',()=>{
-      strP.classList.add('on'); sizeP.classList.remove('on');
-      tsBind('__bstr','브러시 강도',10,100,brushStr,v=>{ brushStr=v; $('brushStrVal').textContent=v; });
-    });
     const undoP=makePill('↩ 되돌리기','act'), clearP=makePill('전체 취소','act');
     undoP.addEventListener('click',()=>$('undoBtn').click());
     clearP.addEventListener('click',()=>$('clearManualBtn').click());
-    paramStrip.appendChild(sizeP); paramStrip.appendChild(strP);
     paramStrip.appendChild(undoP); paramStrip.appendChild(clearP);
-    sizeP.click();
   }
   updateHint();
 }

@@ -1,5 +1,5 @@
 /* 아이돌 보정실 — offline cache */
-const CACHE = 'idol-studio-v15';
+const CACHE = 'idol-studio-v18';
 const CORE = ['./', './index.html', './apple-touch-icon.png', './manifest.json', './icon-192.png', './icon-512.png'];
 
 self.addEventListener('install', e => {
